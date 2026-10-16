@@ -11,7 +11,9 @@ from _ortak import (bosluk_temizle, birebir_mukerrer_sil, kod_mukerrer_sil, kod_
                     kurallari_excelden_oku, temizlik_uygula, excel_oku_coklu_sayfa,
                     hiyerarsi_kontrol, sayisal_metin_temizle, vkn_tc_kontrol,
                     mukerrer_grup_raporu, cari_kayitturu_ata, sutun_sirala,
-                    kdv_gecerli_mi, tarih_karsilastir, kod_seviye_kontrol)
+                    kdv_gecerli_mi, tarih_karsilastir, kod_seviye_kontrol,
+                    vkn_isle, tc_isle, ayar)
+from il_ilce import il_ilce_duzelt
 
 # Calisma klasoru: once bulunulan klasor (kurallar.xlsx varsa), yoksa script klasoru
 _cwd = os.getcwd()
@@ -20,6 +22,12 @@ if os.path.exists(os.path.join(_cwd, 'kurallar.xlsx')):
     KLASOR = _cwd
 else:
     KLASOR = _script
+
+
+# Excel'in sayiya cevirip bastaki 0'i sildigi, metin olarak kalmasi gereken kolonlar
+METIN_KOLONLAR = ['verginumarasi', 'tckimlikno2', 'TC Kimlik No', 'Hesap NO',
+                  'IBAN No', 'Barkod No', 'GTIP Kodu', 'telefon1', 'telefon2',
+                  'ceptel', 'fax', 'Telefon 1', 'Telefon 2', 'Fax', 'postakodu']
 
 
 def kurallari_yukle():
@@ -132,14 +140,34 @@ def veri_temizle(df, modul, modul_adi, kurallar):
     if global_k.get('bosluk_temizle', True):
         df = bosluk_temizle(df)
 
-    sayisal_metin = ['verginumarasi', 'tckimlikno2', 'TC Kimlik No', 'Hesap NO',
-                     'IBAN No', 'Barkod No', 'GTIP Kodu', 'telefon1', 'telefon2',
-                     'ceptel', 'fax']
-    df = sayisal_metin_temizle(df, sayisal_metin)
-    if modul_adi == 'cari':
-        df = vkn_tc_kontrol(df, 'verginumarasi', 'tckimlikno2')
+    df = sayisal_metin_temizle(df, METIN_KOLONLAR)
 
     rapor = []
+
+    # VKN: Excel'in sildigi bastaki 0'lari geri ekle + kontrol hanesi
+    vkn_sifir = ayar(modul, 'vkn_sifir_tamamla')
+    vkn_algoritma = ayar(modul, 'vkn_algoritma_kontrol')
+    if 'verginumarasi' in df.columns and (vkn_sifir or vkn_algoritma):
+        sonuclar = [vkn_isle(v, vkn_sifir, vkn_algoritma) for v in df['verginumarasi']]
+        df['verginumarasi'] = [s[0] for s in sonuclar]
+        for i, s in enumerate(sonuclar):
+            if s[1] not in ('OK', 'BOŞ'):
+                rapor.append({'satir': i + 2, 'alan': 'verginumarasi',
+                              'deger': s[0], 'durum': s[1]})
+
+    # TC Kimlik No algoritma kontrolu
+    if ayar(modul, 'tc_algoritma_kontrol'):
+        for alan in ('tckimlikno2', 'TC Kimlik No'):
+            if alan in df.columns:
+                sonuclar = [tc_isle(v) for v in df[alan]]
+                df[alan] = [s[0] for s in sonuclar]
+                for i, s in enumerate(sonuclar):
+                    if s[1].startswith('UYARI'):
+                        rapor.append({'satir': i + 2, 'alan': alan,
+                                      'deger': s[0], 'durum': s[1]})
+
+    if modul_adi == 'cari':
+        df = vkn_tc_kontrol(df, 'verginumarasi', 'tckimlikno2')
 
     if global_k.get('turkce_karakter_kodlarda', True):
         for alan in kod_alanlari:
@@ -151,9 +179,10 @@ def veri_temizle(df, modul, modul_adi, kurallar):
                         rapor.append({'satir': i + 2, 'alan': alan,
                                       'deger': str(df[alan].iloc[i]), 'durum': s[1]})
 
+    telefon_format = ayar(modul, 'telefon_format')
     for alan in modul.get('telefon_alanlari', []):
         if alan in df.columns:
-            sonuclar = df[alan].apply(telefon_isle)
+            sonuclar = [telefon_isle(v, telefon_format) for v in df[alan]]
             df[alan] = [s[0] for s in sonuclar]
             for i, s in enumerate(sonuclar):
                 if s[1] not in ('OK', 'BOŞ'):
@@ -203,11 +232,11 @@ def veri_temizle(df, modul, modul_adi, kurallar):
         for alan in ('IBAN No', 'IBAN'):
             if alan in df.columns:
                 sonuclar = df[alan].apply(iban_isle)
-                df['IBAN No'] = [s[0] for s in sonuclar]
+                df[alan] = [s[0] for s in sonuclar]
                 for i, s in enumerate(sonuclar):
                     if s[1] not in ('OK', 'BOŞ', 'BOS'):
-                        rapor.append({'satir': i + 2, 'alan': 'IBAN No',
-                                      'deger': str(df['IBAN No'].iloc[i]), 'durum': s[1]})
+                        rapor.append({'satir': i + 2, 'alan': alan,
+                                      'deger': str(df[alan].iloc[i]), 'durum': s[1]})
                 break
 
     if modul.get('doviz_standart', False) and 'Döviz Türü' in df.columns:
@@ -230,7 +259,19 @@ def veri_temizle(df, modul, modul_adi, kurallar):
                         rapor.append({'satir': i + 2, 'alan': alan,
                                       'deger': str(df[alan].iloc[i]), 'durum': s[1]})
 
+    # Il / ilce: ayni hucreye yazilmis, yer degistirmis veya eksik il/ilce
+    il_sutun = ayar(modul, 'il_sutunu')
+    ilce_sutun = ayar(modul, 'ilce_sutunu')
+    il_ilce_aktif = ayar(modul, 'il_ilce_duzelt') and (il_sutun in df.columns or ilce_sutun in df.columns)
+    if il_ilce_aktif:
+        df, il_rapor = il_ilce_duzelt(df, il_sutun, ilce_sutun,
+                                      il_bos_ise_doldur=ayar(modul, 'il_bos_ise_doldur'),
+                                      yazim=ayar(modul, 'il_ilce_yazim'))
+        rapor.extend(il_rapor)
+
     for alan in modul.get('buyuk_harf_alanlari', []):
+        if il_ilce_aktif and alan in (il_sutun, ilce_sutun):
+            continue  # yazimi il_ilce_yazim ayari belirler
         if alan in df.columns:
             df[alan] = df[alan].apply(buyuk_harf)
 
@@ -313,6 +354,7 @@ def modul_isle(modul_adi, kurallar, mukerrer_mod='incele', dry_run=False, klasor
     df, rapor = veri_temizle(df, modul, modul_adi, kurallar)
 
     mukerrer_kurallari = modul.get('mukerrer_kontrol', [])
+    rapor_uyarisi_ekle = True
 
     if mukerrer_kurallari:
         if mukerrer_mod == 'incele':
@@ -326,17 +368,17 @@ def modul_isle(modul_adi, kurallar, mukerrer_mod='incele', dry_run=False, klasor
                 print('  [DRY-RUN] Inceleme dosyasi kaydedilmeyecek: ' + inceleme_adi)
             else:
                 inceleme_raporu(df, inceleme_yolu)
-            # Mukerrer grup raporu
-            try:
-                gdf = mukerrer_grup_raporu(df, mukerrer_kurallari)
-                if not gdf.empty:
-                    gadi = modul['cikti_dosya'].replace('.xlsx', '_MUKERRER_GRUPLAR.xlsx')
-                    gyolu = os.path.join(klasor, gadi)
-                    gdf.to_excel(gyolu, index=False)
-                    print('  Mukerrer grup raporu: ' + gadi + ' (' + str(len(gdf)) + ' grup)')
-            except Exception as e:
-                print('  UYARI: Grup raporu: ' + str(e))
                 print('  Inceleme dosyasi kaydedildi: ' + inceleme_adi)
+                # Mukerrer grup raporu
+                try:
+                    gdf = mukerrer_grup_raporu(df, mukerrer_kurallari)
+                    if not gdf.empty:
+                        gadi = modul['cikti_dosya'].replace('.xlsx', '_MUKERRER_GRUPLAR.xlsx')
+                        gyolu = os.path.join(klasor, gadi)
+                        gdf.to_excel(gyolu, index=False)
+                        print('  Mukerrer grup raporu: ' + gadi + ' (' + str(len(gdf)) + ' grup)')
+                except Exception as e:
+                    print('  UYARI: Grup raporu: ' + str(e))
             print(">> Excel'de ac, silinecek satirlara SIL_ONAY sutununa 'E' yaz.")
             print('>> Sonra: python dia_isle.py ' + modul_adi + ' --uygula')
             return
@@ -351,8 +393,11 @@ def modul_isle(modul_adi, kurallar, mukerrer_mod='incele', dry_run=False, klasor
                 print('HATA: Inceleme dosyasi bulunamadi.')
                 return
             print('Inceleme dosyasi okunuyor: ' + os.path.basename(inceleme_yolu))
-            df = pd.read_excel(inceleme_yolu)
+            # VKN/telefon gibi kolonlar metin okunur (bastaki 0 kaybolmasin)
+            metin_kolonlar = {k: str for k in METIN_KOLONLAR}
+            df = pd.read_excel(inceleme_yolu, dtype=metin_kolonlar)
             df, silinen_df = onayli_sil(df)
+            rapor_uyarisi_ekle = False
             if not silinen_df.empty:
                 silinen_adi = cikti_dosya_adi(modul, kurallar, 'silinenler')
                 silinen_yolu = os.path.join(klasor, silinen_adi)
@@ -368,7 +413,8 @@ def modul_isle(modul_adi, kurallar, mukerrer_mod='incele', dry_run=False, klasor
                 silinen_yolu = os.path.join(klasor, silinen_adi)
                 kaydet(silinen_df, silinen_yolu, dry_run)
 
-    df = kontrol_uyari_ekle(df, rapor)
+    if rapor_uyarisi_ekle:
+        df = kontrol_uyari_ekle(df, rapor)
 
     cikti_adi = cikti_dosya_adi(modul, kurallar, 'hazir')
     cikti_yolu = os.path.join(klasor, cikti_adi)

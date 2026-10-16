@@ -12,6 +12,26 @@ from datetime import datetime
 import pandas as pd
 
 
+class _CanliLog:
+    """print() ciktisini satir satir GUI log'una aktarir (EXE modunda canli takip)."""
+    def __init__(self, log):
+        self._log = log
+        self._kalan = ''
+
+    def write(self, metin):
+        self._kalan += metin
+        while '\n' in self._kalan:
+            satir, self._kalan = self._kalan.split('\n', 1)
+            if satir.strip():
+                self._log(satir)
+        return len(metin)
+
+    def flush(self):
+        if self._kalan.strip():
+            self._log(self._kalan)
+        self._kalan = ''
+
+
 # ============================================================
 # ANA PENCERE
 # ============================================================
@@ -193,7 +213,6 @@ class DiaGUI:
         # EXE icinde calisiyorsa dia_isle'yi dogrudan cagir
         if getattr(sys, 'frozen', False):
             try:
-                import io
                 from contextlib import redirect_stdout
                 import dia_isle as _di
                 _di.KLASOR = self.musteri_klasoru
@@ -204,7 +223,12 @@ class DiaGUI:
                     _di_argv.append('--sil')
                 elif mod == 'dryrun':
                     _di_argv.append('--dry-run')
-                _buf = io.StringIO()
+                self.log('============================================================')
+                self.log('MODUL: ' + modul.upper() + '  |  MOD: ' + mod)
+                self.log('KLASOR: ' + self.musteri_klasoru)
+                self.log('============================================================')
+                self.durum_var.set('Calisiyor...')
+                _buf = _CanliLog(self.log)
                 _eski_argv = sys.argv.copy()
                 sys.argv = ['dia_isle.py'] + _di_argv
                 try:
@@ -212,9 +236,7 @@ class DiaGUI:
                         _di.main()
                 finally:
                     sys.argv = _eski_argv
-                for satir in _buf.getvalue().split('\n'):
-                    if satir.strip():
-                        self.log(satir)
+                    _buf.flush()
                 self.durum_var.set('Tamamlandi')
             except Exception as e:
                 self.log('HATA: ' + str(e))
@@ -309,7 +331,7 @@ class HakkindaPenceresi:
     def __init__(self, parent, program_klasoru):
         self.pencere = tk.Toplevel(parent)
         self.pencere.title('Hakkında - DIA Kurulum Veri Temizleme')
-        self.pencere.geometry('720x680')
+        self.pencere.geometry('720x800')
         self.pencere.configure(bg='#f0f0f0')
         self.pencere.transient(parent)
         self.pencere.grab_set()
@@ -320,7 +342,7 @@ class HakkindaPenceresi:
         tk.Label(baslik, text='DIA KURULUM VERİ TEMİZLEME',
                  font=('Arial', 18, 'bold'),
                  bg='#2c3e50', fg='white').pack()
-        tk.Label(baslik, text='Sürüm 2.0  •  Excel → DIA Dönüştürücü',
+        tk.Label(baslik, text='Sürüm 2.1  •  Excel → DIA Dönüştürücü',
                  font=('Arial', 10),
                  bg='#2c3e50', fg='#bdc3c7').pack(pady=(5, 0))
 
@@ -358,6 +380,10 @@ class HakkindaPenceresi:
         madde('Renkli Excel çıktısı (sarı: mükerrer, kırmızı: hata, turuncu: düzeltme)')
         madde('Otomatik sütun eşleme + öğrenme (📚 Eşleme Öğren)')
         madde('Mükerrer grup raporu (hangi veri neden mükerrer?)')
+        madde('İl / ilçe düzeltme: aynı hücreye yazılmış veya yer değiştirmiş il-ilçe (81 il, 973 ilçe)')
+        madde("VKN baştaki 0 tamamlama (Excel'in sildiği sıfırlar) + VKN / TCKN algoritma kontrolü")
+        madde('Telefon biçimi ayarlanabilir (5321234567 / 05321234567 / +905321234567)')
+        madde('Tüm yeni özellikler ⚙ Ayarlar > Ayarlar sekmesinden açılıp kapatılabilir')
 
         bas('Kullanım')
         madde('1) Müşteri klasörünü seçin')
@@ -606,6 +632,10 @@ class AyarlarPenceresi:
             kaynak = os.path.join(program_klasoru, 'kurallar.xlsx')
             if os.path.exists(kaynak):
                 shutil.copy2(kaynak, self.kurallar_yolu)
+            else:
+                from _ortak import kurallari_excele_yaz
+                from kurallar import KURALLAR
+                kurallari_excele_yaz(KURALLAR, self.kurallar_yolu)
 
         self.pencere = tk.Toplevel(parent)
         self.pencere.title('Ayarlar - kurallar.xlsx')
@@ -647,18 +677,15 @@ class AyarlarPenceresi:
         self.eslesme_frame = tk.Frame(self.notebook, bg='white')
         self.varsayilan_frame = tk.Frame(self.notebook, bg='white')
         self.ayarlar_frame = tk.Frame(self.notebook, bg='white')
-        self.ayarlar_frame = tk.Frame(self.notebook, bg='white')
 
         self.notebook.add(self.mukerrer_frame, text='  Mukerrer  ')
         self.notebook.add(self.eslesme_frame, text='  Eslesme  ')
         self.notebook.add(self.varsayilan_frame, text='  Varsayilan  ')
         self.notebook.add(self.ayarlar_frame, text='  Ayarlar  ')
-        self.notebook.add(self.ayarlar_frame, text='  Ayarlar  ')
 
         self.mukerrer_tablo()
         self.eslesme_tablo()
         self.varsayilan_tablo()
-        self.ayarlar_tablo()
         self.ayarlar_tablo()
 
         # Alt butonlar
@@ -790,10 +817,8 @@ class AyarlarPenceresi:
         self.ay_tree.pack(fill=tk.BOTH, expand=True)
         self.ay_tree.bind('<Double-1>', self._ayar_cift_tikla)
         self.ay_tree.bind('<Return>', self._ayar_cift_tikla)
-        self.ay_tree.bind('<Return>', self._ayar_cift_tikla)
 
         # Ipucu
-
         tk.Label(cerceve, text='Satira cift tiklayin -> detayli aciklama acilir',
                  font=('Arial', 9, 'italic'), bg='white', fg='#7f8c8d'
                  ).pack(anchor='w', pady=(3, 0))
@@ -810,34 +835,32 @@ class AyarlarPenceresi:
                   bg='#f39c12', fg='white', padx=10).pack(side=tk.LEFT, padx=2)
         tk.Button(btn, text='ℹ Detay', command=self.ayar_detay_goster,
                   bg='#9b59b6', fg='white', padx=10).pack(side=tk.LEFT, padx=2)
+        tk.Button(btn, text='＋ Eksik Ayarlari Ekle', command=self.eksik_ayarlari_ekle,
+                  bg='#16a085', fg='white', padx=10).pack(side=tk.LEFT, padx=2)
 
-    def ayarlar_tablo(self):
-        cerceve = tk.Frame(self.ayarlar_frame, bg='white')
-        cerceve.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        tk.Label(cerceve, text='AYARLAR sayfasi: girdi/cikti dosya, kontrol ayarlari',
-                 font=('Arial', 9, 'italic'), bg='white',
-                 fg='#555').pack(anchor='w', pady=5)
-
-        self.ay_tree = ttk.Treeview(cerceve,
-                                    columns=('ayar', 'deger'),
-                                    show='headings', height=15)
-        self.ay_tree.heading('ayar', text='Ayar')
-        self.ay_tree.heading('deger', text='Deger')
-        self.ay_tree.column('ayar', width=350)
-        self.ay_tree.column('deger', width=450)
-        self.ay_tree.pack(fill=tk.BOTH, expand=True)
-
-        btn = tk.Frame(cerceve, bg='white')
-        btn.pack(fill=tk.X, pady=5)
-
-        tk.Button(btn, text='+ Yeni', command=lambda: self.ekle(self.ay_tree),
-                  bg='#3498db', fg='white', padx=10).pack(side=tk.LEFT, padx=2)
-        tk.Button(btn, text=' Sil', command=lambda: self.sil(self.ay_tree),
-                  bg='#e74c3c', fg='white', padx=10).pack(side=tk.LEFT, padx=2)
-        tk.Button(btn, text=' Duzenle',
-                  command=lambda: self.duzenle(self.ay_tree, ['ayar', 'deger']),
-                  bg='#f39c12', fg='white', padx=10).pack(side=tk.LEFT, padx=2)
+    def eksik_ayarlari_ekle(self):
+        """Yeni parametrik ayarlardan bu modulde olmayanlari varsayilan degerle ekler."""
+        from _ortak import AYAR_TANIMLARI
+        mevcut = {str(self.ay_tree.item(i, 'values')[0]) for i in self.ay_tree.get_children()}
+        eklenen = 0
+        for a in AYAR_TANIMLARI:
+            if a['ayar'] in mevcut:
+                continue
+            deger = a['varsayilan']
+            if isinstance(deger, bool):
+                deger = 'True' if deger else 'False'
+            formul = a['formul']
+            if a.get('secenekler'):
+                formul = 'Secenekler: ' + ' / '.join(a['secenekler']) + '  |  ' + formul
+            self.ay_tree.insert('', 'end', values=(a['ayar'], deger, a['aciklama'],
+                                                   formul, a['ornek']))
+            eklenen += 1
+        if eklenen:
+            messagebox.showinfo('Bilgi', str(eklenen) + " ayar eklendi. Degistirmek icin satiri secip "
+                                "'Duzenle' butonuna basin; kalici olmasi icin KAYDET'e basin.",
+                                parent=self.pencere)
+        else:
+            messagebox.showinfo('Bilgi', 'Tum ayarlar zaten var.', parent=self.pencere)
 
     def _ayar_cift_tikla(self, event=None):
         """Double-1 veya Return ile cagrilir."""
@@ -929,7 +952,6 @@ class AyarlarPenceresi:
         self.muk_tree.delete(*self.muk_tree.get_children())
         self.es_tree.delete(*self.es_tree.get_children())
         self.va_tree.delete(*self.va_tree.get_children())
-        self.ay_tree.delete(*self.ay_tree.get_children())
         self.ay_tree.delete(*self.ay_tree.get_children())
 
         # MUKERRER

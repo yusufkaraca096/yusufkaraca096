@@ -5,6 +5,74 @@ from datetime import datetime
 
 TR_KARAKTER = str.maketrans('şçığüöŞÇİĞÜÖ', 'sciguoSCIGUO')
 
+# ------------------------------------------------------------
+# Parametrik ayarlar (kurallar.xlsx > AYARLAR sayfasi, modul bazinda)
+# Excel'de satiri olmayan ayar icin 'varsayilan' kullanilir.
+# Ayarlar penceresindeki "Eksik Ayarlari Ekle" butonu bu listeden doldurur.
+# ------------------------------------------------------------
+AYAR_TANIMLARI = [
+    {'ayar': 'telefon_format', 'varsayilan': '10', 'tur': 'secim',
+     'secenekler': ['10', '11', '90', '+90'],
+     'aciklama': 'Telefon / cep / faks numaralarinin yazim bicimi.',
+     'formul': '10 = basta 0 yok | 11 = basta 0 var | 90 = ulke kodlu | +90 = + ile ulke kodlu',
+     'ornek': '0532 123 45 67 -> 10: 5321234567 | 11: 05321234567 | +90: +905321234567'},
+    {'ayar': 'vkn_sifir_tamamla', 'varsayilan': True, 'tur': 'bool',
+     'aciklama': "Excel VKN'yi sayi olarak saklayinca bastaki 0 silinir. 8-9 haneli VKN soldan 0 ile 10 haneye tamamlanir.",
+     'formul': 'len(VKN) 8 veya 9 ise -> zfill(10)',
+     'ornek': '123456789 -> 0123456789'},
+    {'ayar': 'vkn_algoritma_kontrol', 'varsayilan': True, 'tur': 'bool',
+     'aciklama': 'VKN 10. hanesini (kontrol hanesi) GIB algoritmasina gore dogrular; hataliysa uyari yazar, degeri degistirmez.',
+     'formul': 't=(d[i]+9-i)%10; p=(t*2^(9-i))%9 (t!=0 ve p=0 ise p=9); kontrol=(10-toplam%10)%10',
+     'ornek': '0123456789 -> OK'},
+    {'ayar': 'tc_algoritma_kontrol', 'varsayilan': True, 'tur': 'bool',
+     'aciklama': 'TC Kimlik No algoritma kontrolu; hataliysa uyari yazar, degeri degistirmez.',
+     'formul': 'd10=((d1+d3+d5+d7+d9)*7-(d2+d4+d6+d8))%10; d11=(d1+..+d10)%10',
+     'ornek': '10000000146 -> OK'},
+    {'ayar': 'il_ilce_duzelt', 'varsayilan': True, 'tur': 'bool',
+     'aciklama': 'Il/ilceyi 81 il, 973 ilce listesine gore duzeltir: ayni hucredeki il/ilceyi ayirir, yer degistirmisse duzeltir.',
+     'formul': "sehir='Kadıköy/İstanbul' veya sehir='Kadıköy', ilce='İstanbul' -> sehir=İSTANBUL, ilce=KADIKÖY",
+     'ornek': 'Kadıköy / İstanbul -> İSTANBUL / KADIKÖY'},
+    {'ayar': 'il_bos_ise_doldur', 'varsayilan': True, 'tur': 'bool',
+     'aciklama': 'Il bos, ilce tek bir ile aitse ili doldurur (Gölbaşı gibi birden fazla ilde olan ilceler doldurulmaz, uyari verilir).',
+     'formul': 'ilce yalniz 1 ilde varsa -> sehir = o il',
+     'ornek': "ilce='Siverek' -> sehir='ŞANLIURFA'"},
+    {'ayar': 'il_ilce_yazim', 'varsayilan': 'BUYUK', 'tur': 'secim',
+     'secenekler': ['BUYUK', 'BASLIK'],
+     'aciklama': 'Duzeltilen il/ilce adlarinin yazimi.',
+     'formul': 'BUYUK = İSTANBUL | BASLIK = İstanbul',
+     'ornek': 'kadikoy -> KADIKÖY veya Kadıköy'},
+    {'ayar': 'il_sutunu', 'varsayilan': 'sehir', 'tur': 'metin',
+     'aciklama': 'Il bilgisinin bulundugu DIA kolonu.',
+     'formul': 'kolon adi', 'ornek': 'sehir'},
+    {'ayar': 'ilce_sutunu', 'varsayilan': 'ilce', 'tur': 'metin',
+     'aciklama': 'Ilce bilgisinin bulundugu DIA kolonu.',
+     'formul': 'kolon adi', 'ornek': 'ilce'},
+]
+AYAR_VARSAYILAN = {a['ayar']: a['varsayilan'] for a in AYAR_TANIMLARI}
+AYAR_TURU = {a['ayar']: a['tur'] for a in AYAR_TANIMLARI}
+_EVET = ('true', '1', '1.0', 'evet', 'e', 'yes', 'x')
+
+
+def ayar(modul, ad):
+    """Modul ayarini dondurur; tanimli degilse varsayilan."""
+    deger = modul.get(ad)
+    if deger is None or (isinstance(deger, str) and deger.strip() == ''):
+        return AYAR_VARSAYILAN.get(ad)
+    return deger
+
+
+def ayar_cevir(ad, deger):
+    """Excel'den okunan ayar degerini turune cevirir."""
+    tur = AYAR_TURU.get(ad, 'metin')
+    if deger is None or (not isinstance(deger, str) and pd.isna(deger)):
+        return AYAR_VARSAYILAN.get(ad)
+    if tur == 'bool':
+        return str(deger).strip().lower() in _EVET
+    s = sayisal_metin(deger)
+    if tur == 'secim':
+        s = s.upper() if s.upper() in ('BUYUK', 'BASLIK') else s
+    return s if s != '' else AYAR_VARSAYILAN.get(ad)
+
 
 def bosluk_temizle(df):
     for col in df.columns:
@@ -36,22 +104,116 @@ def kod_isle(deger):
     return temiz, 'OK'
 
 
-def telefon_isle(deger):
+def sayisal_metin(deger):
+    """Excel'in sayiya cevirdigi hucreyi metne cevirir: 5321234567.0 -> '5321234567'."""
+    if isinstance(deger, float) and deger.is_integer():
+        return str(int(deger))
+    s = str(deger).strip()
+    if re.fullmatch(r'\d+\.0', s):
+        s = s[:-2]
+    return s
+
+
+TELEFON_FORMATLARI = ('10', '11', '90', '+90')
+
+
+def telefon_isle(deger, format='10'):
+    """Telefonu 10 haneli cekirdege indirir, sonra istenen bicimde yazar.
+
+    format: '10'  -> 5321234567     (basta 0 yok)
+            '11'  -> 05321234567
+            '90'  -> 905321234567
+            '+90' -> +905321234567
+    """
     if pd.isna(deger) or str(deger).strip() == '':
         return '', 'BOŞ'
-    orijinal = str(deger).strip()
+    orijinal = sayisal_metin(deger)
     rakam = re.sub(r'\D', '', orijinal)
     if not rakam:
         return '', 'GEÇERSİZ (' + orijinal + ')'
-    if rakam.startswith('90') and len(rakam) == 12:
+    parcalar = re.split(r'/|,|;|\bdahili\b|\bdah\.?|\bext\.?', orijinal, flags=re.IGNORECASE)
+    if len(rakam) > 12 and len(parcalar) > 1:
+        # '0532 123 45 67 / 102', 'dahili 12' veya iki numara: ilk numara alinir
+        ilk, durum = telefon_isle(parcalar[0], format)
+        if not durum.startswith('GEÇERSİZ'):
+            return ilk, 'UYARI: ILK NUMARA ALINDI (' + orijinal + ' -> ' + ilk + ')'
+        return rakam, 'GEÇERSİZ (' + orijinal + ')'
+    if rakam.startswith('00'):
         rakam = rakam[2:]
-    if len(rakam) == 10 and not rakam.startswith('0'):
+    if len(rakam) == 13 and rakam.startswith('900'):
+        rakam = rakam[3:]
+    elif len(rakam) == 12 and rakam.startswith('90'):
+        rakam = rakam[2:]
+    elif len(rakam) == 11 and rakam.startswith('0'):
+        rakam = rakam[1:]
+    if len(rakam) != 10 or rakam.startswith('0'):
+        return rakam, 'GEÇERSİZ (' + orijinal + ')'
+    format = str(format).strip()
+    if format == '11':
         rakam = '0' + rakam
-    if len(rakam) == 11 and rakam.startswith('0'):
-        if orijinal != rakam:
-            return rakam, 'DÜZELTİLDİ (' + orijinal + ' -> ' + rakam + ')'
-        return rakam, 'OK'
-    return rakam, 'GEÇERSİZ (' + orijinal + ')'
+    elif format == '90':
+        rakam = '90' + rakam
+    elif format == '+90':
+        rakam = '+90' + rakam
+    if orijinal != rakam:
+        return rakam, 'DÜZELTİLDİ (' + orijinal + ' -> ' + rakam + ')'
+    return rakam, 'OK'
+
+
+def vkn_gecerli(vkn):
+    """VKN (10 hane) kontrol hanesi dogrulamasi."""
+    if len(vkn) != 10 or not vkn.isdigit():
+        return False
+    toplam = 0
+    for i in range(9):
+        t = (int(vkn[i]) + 9 - i) % 10
+        p = (t * 2 ** (9 - i)) % 9
+        if t != 0 and p == 0:
+            p = 9
+        toplam += p
+    return (10 - toplam % 10) % 10 == int(vkn[9])
+
+
+def tc_gecerli(tc):
+    """TC Kimlik No algoritma kontrolu (11 hane, ilk hane 0 olamaz)."""
+    if len(tc) != 11 or not tc.isdigit() or tc[0] == '0':
+        return False
+    d = [int(c) for c in tc]
+    if ((d[0] + d[2] + d[4] + d[6] + d[8]) * 7 - (d[1] + d[3] + d[5] + d[7])) % 10 != d[9]:
+        return False
+    return sum(d[:10]) % 10 == d[10]
+
+
+def vkn_isle(deger, sifir_tamamla=True, algoritma_kontrol=True):
+    """Excel'in sildigi bastaki sifirlari geri ekler, kontrol hanesine bakar.
+
+    Excel VKN'yi sayi olarak saklayinca 0123456789 -> 123456789 olur.
+    8-9 haneli VKN soldan 0 ile 10 haneye tamamlanir.
+    Hane sayisi uyarilari vkn_tc_kontrol'de verildigi icin burada tekrar edilmez.
+    """
+    if pd.isna(deger) or str(deger).strip() == '':
+        return '', 'BOŞ'
+    orijinal = sayisal_metin(deger)
+    rakam = re.sub(r'\D', '', orijinal)
+    if sifir_tamamla and 8 <= len(rakam) < 10:
+        rakam = rakam.zfill(10)
+    if len(rakam) == 10 and algoritma_kontrol and not vkn_gecerli(rakam):
+        return rakam, 'UYARI: VKN KONTROL HANESI HATALI (' + rakam + ')'
+    if orijinal != rakam:
+        return rakam, 'DÜZELTİLDİ (' + orijinal + ' -> ' + rakam + ')'
+    return rakam, 'OK'
+
+
+def tc_isle(deger, algoritma_kontrol=True):
+    if pd.isna(deger) or str(deger).strip() == '':
+        return '', 'BOŞ'
+    orijinal = sayisal_metin(deger)
+    rakam = re.sub(r'\D', '', orijinal)
+    if len(rakam) == 11 and algoritma_kontrol and not tc_gecerli(rakam):
+        return rakam, 'UYARI: TC KIMLIK NO ALGORITMA HATALI (' + rakam + ')'
+    if orijinal != rakam:
+        return rakam, 'DÜZELTİLDİ (' + orijinal + ' -> ' + rakam + ')'
+    return rakam, 'OK'
 
 
 def mail_gecerli(deger):
@@ -178,13 +340,13 @@ def evet_hayir_standart(deger):
 def buyuk_harf(deger):
     if pd.isna(deger):
         return ''
-    return str(deger).strip().upper()
+    return str(deger).strip().replace('i', 'İ').replace('ı', 'I').upper()
 
 
 def kucuk_harf(deger):
     if pd.isna(deger):
         return ''
-    return str(deger).strip().lower()
+    return str(deger).strip().replace('I', 'ı').replace('İ', 'i').lower()
 
 
 def rapor_ozet(rapor_listesi):
@@ -861,6 +1023,8 @@ def kurallari_excelden_oku(yol):
             if modul in K:
                 alan = str(row.get('alan', '')).strip()
                 deger = row.get('deger', '')
+                if not isinstance(deger, str) and pd.isna(deger):
+                    deger = ''
                 if alan:
                     K[modul]['varsayilan'][alan] = deger
     except Exception as e:
@@ -892,7 +1056,9 @@ def kurallari_excelden_oku(yol):
                     K[modul][ayar] = [s.strip()
                                       for s in str(deger).split(',') if s.strip()]
             elif ayar in bool_alanlari:
-                K[modul][ayar] = str(deger).lower() in ('true', '1', 'evet', 'yes')
+                K[modul][ayar] = str(deger).strip().lower() in _EVET
+            elif ayar in AYAR_TURU:
+                K[modul][ayar] = ayar_cevir(ayar, deger)
     except Exception as e:
         print('AYARLAR okunamadi: ' + str(e))
 
@@ -940,41 +1106,6 @@ Yoksa KONTROL_UYARI sutununa yazar.
     return df
 
 
-def hiyerarsi_kontrol(df, hesap_kodu_sutunu):
-    if hesap_kodu_sutunu not in df.columns:
-        return df
-    if 'KONTROL_UYARI' not in df.columns:
-        df['KONTROL_UYARI'] = 'OK'
-    mevcut = set()
-    for kod in df[hesap_kodu_sutunu]:
-        if pd.notna(kod) and str(kod).strip():
-            mevcut.add(str(kod).strip())
-    uyari_sayisi = 0
-    for idx, kod in enumerate(df[hesap_kodu_sutunu]):
-        k = str(kod).strip() if pd.notna(kod) else ''
-        if not k:
-            continue
-        parcalar = k.split('.')
-        if len(parcalar) < 2:
-            continue
-        parent = '.'.join(parcalar[:-1])
-        if parent not in mevcut:
-            mevcut_uyari = df.at[idx, 'KONTROL_UYARI']
-            yeni = 'UST HESAP YOK: ' + parent
-            if mevcut_uyari == 'OK' or mevcut_uyari == '':
-                df.at[idx, 'KONTROL_UYARI'] = yeni
-            elif yeni not in mevcut_uyari:
-                df.at[idx, 'KONTROL_UYARI'] = mevcut_uyari + ' | ' + yeni
-            uyari_sayisi += 1
-    if uyari_sayisi > 0:
-        print(
-            '  Hiyerarsi uyarisi: ' +
-            str(uyari_sayisi) +
-            ' satirda ust hesap eksik'
-        )
-    return df
-
-
 EK_ALANLAR = {
     'Asgari Miktar', 'Azami Miktar', 'Birim Kodu', 'Dogum Tarihi', 'Durum',
     'Döviz 1', 'Döviz 2', 'Döviz 3', 'Döviz 4', 'Döviz 5', 'Döviz 6', 'Döviz 7',
@@ -1003,7 +1134,7 @@ def xls_olarak_kaydet(df, xlsx_yolu):
         for j, col in enumerate(df.columns):
             ws.write(0, j, str(col))
 
-        for i, row in df.iterrows():
+        for i, (_, row) in enumerate(df.iterrows()):
             for j, val in enumerate(row):
                 if pd.isna(val):
                     val = ''
@@ -1021,20 +1152,6 @@ def xls_olarak_kaydet(df, xlsx_yolu):
 
 def sayisal_metin_temizle(df, sutunlar):
     """TC, vergi no gibi sutunlardaki .0 uzantisini temizler."""
-    for alan in sutunlar:
-        if alan in df.columns:
-            def temizle(x):
-                if pd.isna(x):
-                    return ''
-                s = str(x).strip()
-                if s.endswith('.0'):
-                    s = s[:-2]
-                return s
-            df[alan] = df[alan].apply(temizle)
-    return df
-
-
-def sayisal_metin_temizle(df, sutunlar):
     for alan in sutunlar:
         if alan in df.columns:
             def temizle(x):
@@ -1099,6 +1216,8 @@ Karisikliklari ve eksikleri tespit eder.
 def toplam_satirlarini_temizle(df):
     """Listelenen, TOPLAM, *** gibi ozet satirlarini siler."""
     onceki = len(df)
+    if len(df.columns) == 0:
+        return df
     ilk_sutun = df.columns[0]
     def ozet_satiri(deger):
         if pd.isna(deger):
@@ -1150,7 +1269,8 @@ def cari_kayitturu_ata(df):
         unvan = unvan.replace('İ', 'I').replace('Ş', 'S').replace('Ç', 'C')
         unvan = unvan.replace('Ü', 'U').replace('Ö', 'O').replace('Ğ', 'G')
         for kelime in sirket_kelimeleri:
-            if kelime in unvan:
+            # kelime olarak ara: 'AS' -> 'DENIZ AS' evet, 'KASAP' hayir
+            if re.search(r'(?<![A-Z])' + re.escape(kelime.strip('.')) + r'(?![A-Z])', unvan):
                 return 'KRLS'
         return 'SHS'
 
@@ -1159,3 +1279,53 @@ def cari_kayitturu_ata(df):
     shs_sayisi = (df['cari kayitturu'] == 'SHS').sum()
     print('  cari kayitturu atandi: ' + str(krls_sayisi) + ' KRLS, ' + str(shs_sayisi) + ' SHS')
     return df
+
+
+def kurallari_excele_yaz(kurallar, yol):
+    """KURALLAR sozlugunden (kurallar.py) Ayarlar penceresinin duzenleyebilecegi
+    kurallar.xlsx dosyasini olusturur. Yeni parametrik ayarlar da varsayilanlariyla eklenir."""
+    liste_alanlari = ['telefon_alanlari', 'buyuk_harf_alanlari', 'kucuk_harf_alanlari',
+                      'kod_alanlari', 'kdv_alanlari', 'tarih_alanlari']
+    tek_alanlar = ['sayfa', 'girdi_dosya', 'cikti_dosya', 'rapor_dosya']
+    bool_alanlari = ['mail_kontrol', 'iban_temizle', 'doviz_standart', 'tc_kimlik_11_hane',
+                     'tum_alanlar_zorunlu', 'kist_kontrol', 'bosluk_yerine_nokta',
+                     'cari_hesap_120_320']
+    mukerrer, eslesme, varsayilan, ayarlar = [], [], [], []
+    for modul, m in kurallar.items():
+        if modul == 'global':
+            continue
+        for k in m.get('mukerrer_kontrol', []):
+            mukerrer.append({'modul': modul, 'sutunlar': ', '.join(k.get('sutunlar', [])),
+                             'aksiyon': k.get('aksiyon', 'isaretle'), 'aciklama': ''})
+        for baslik, alan in m.get('eslesme', {}).items():
+            eslesme.append({'modul': modul, 'excel_baslik': baslik, 'dia_alan': alan})
+        for alan, deger in m.get('varsayilan', {}).items():
+            varsayilan.append({'modul': modul, 'alan': alan, 'deger': deger})
+        for a in tek_alanlar:
+            if a in m:
+                ayarlar.append({'modul': modul, 'ayar': a, 'deger': m[a]})
+        for a in liste_alanlari:
+            if a in m:
+                ayarlar.append({'modul': modul, 'ayar': a, 'deger': ', '.join(m[a])})
+        for a in bool_alanlari:
+            if a in m:
+                ayarlar.append({'modul': modul, 'ayar': a, 'deger': 'True' if m[a] else 'False'})
+        for a in AYAR_TANIMLARI:
+            deger = m.get(a['ayar'], a['varsayilan'])
+            if isinstance(deger, bool):
+                deger = 'True' if deger else 'False'
+            ayarlar.append({'modul': modul, 'ayar': a['ayar'], 'deger': deger,
+                            'aciklama': a['aciklama'], 'formul': a['formul'],
+                            'ornek': a['ornek']})
+    sayfalar = {
+        'MUKERRER': pd.DataFrame(mukerrer, columns=['modul', 'sutunlar', 'aksiyon', 'aciklama']),
+        'ESLESME': pd.DataFrame(eslesme, columns=['modul', 'excel_baslik', 'dia_alan']),
+        'VARSAYILAN': pd.DataFrame(varsayilan, columns=['modul', 'alan', 'deger']),
+        'AYARLAR': pd.DataFrame(ayarlar, columns=['modul', 'ayar', 'deger', 'aciklama',
+                                                  'formul', 'ornek']),
+    }
+    with pd.ExcelWriter(yol, engine='openpyxl') as w:
+        for ad, df in sayfalar.items():
+            df.to_excel(w, sheet_name=ad, index=False)
+    print('kurallar.xlsx olusturuldu: ' + yol)
+    return yol

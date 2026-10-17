@@ -336,11 +336,11 @@ class DiaGUI:
 
     def logo_ac(self):
         from entegrasyon_gui import LogoPenceresi
-        LogoPenceresi(self.root, self.musteri_klasoru, self.log)
+        LogoPenceresi(self.root, lambda: self.musteri_klasoru, self.log)
 
     def dia_ac(self):
         from entegrasyon_gui import DiaPenceresi
-        DiaPenceresi(self.root, self.musteri_klasoru, self.log)
+        DiaPenceresi(self.root, lambda: self.musteri_klasoru, self.log)
 
 
 

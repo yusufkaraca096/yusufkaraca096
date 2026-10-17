@@ -48,6 +48,26 @@ class _ArkaPlanPencere:
         self._kuyruk = queue.Queue()
         self._calisiyor = False
         self.alanlar = {}
+        self._klasor_kaynagi = None
+
+    @property
+    def klasor(self):
+        """Ana ekranda secili GUNCEL musteri klasoru (pencere acildiktan sonra degisebilir)."""
+        k = self._klasor_kaynagi
+        return k() if callable(k) else k
+
+    def klasor_etiketi(self):
+        self._klasor_lbl = tk.Label(self.pencere, text='', font=('Arial', 9, 'bold'), bg='#f0f0f0',
+                                    fg='#2c3e50', wraplength=720, justify='left')
+        self._klasor_lbl.pack(anchor='w', padx=10)
+        self._klasor_guncelle()
+
+    def _klasor_guncelle(self):
+        try:
+            self._klasor_lbl.config(text='Klasor: ' + str(self.klasor))
+            self.pencere.after(1000, self._klasor_guncelle)
+        except tk.TclError:
+            pass   # pencere kapandi
 
     def form(self, cerceve, tanimlar, kayitli):
         for i, (anahtar, etiket, varsayilan, gizli) in enumerate(tanimlar):
@@ -111,9 +131,9 @@ class _ArkaPlanPencere:
 # ============================================================
 class LogoPenceresi(_ArkaPlanPencere):
     def __init__(self, parent, musteri_klasoru, ana_log):
-        super().__init__(parent, "Logo'dan Cek", '720x620', ana_log)
-        self.klasor = musteri_klasoru
-        kayitli = ayar_oku(musteri_klasoru).get('logo', {})
+        super().__init__(parent, "Logo'dan Cek", '720x640', ana_log)
+        self._klasor_kaynagi = musteri_klasoru
+        kayitli = ayar_oku(self.klasor).get('logo', {})
 
         ust = tk.Frame(self.pencere, bg='#c0392b', pady=8)
         ust.pack(fill=tk.X)
@@ -122,6 +142,7 @@ class LogoPenceresi(_ArkaPlanPencere):
         tk.Label(self.pencere, text='Sadece okuma yapilir, Logo verisi degistirilmez. '
                                     'Kullanici bos birakilirsa Windows oturumuyla baglanilir.',
                  font=('Arial', 9, 'italic'), bg='#f0f0f0', fg='#555').pack(anchor='w', padx=10, pady=4)
+        self.klasor_etiketi()
 
         cerceve = tk.Frame(self.pencere, bg='#f0f0f0')
         cerceve.pack(fill=tk.X, padx=10)
@@ -203,8 +224,8 @@ class LogoPenceresi(_ArkaPlanPencere):
 class DiaPenceresi(_ArkaPlanPencere):
     def __init__(self, parent, musteri_klasoru, ana_log):
         super().__init__(parent, "DIA'ya Gonder", '760x700', ana_log)
-        self.klasor = musteri_klasoru
-        kayitli = ayar_oku(musteri_klasoru).get('dia', {})
+        self._klasor_kaynagi = musteri_klasoru
+        kayitli = ayar_oku(self.klasor).get('dia', {})
 
         ust = tk.Frame(self.pencere, bg='#2980b9', pady=8)
         ust.pack(fill=tk.X)
@@ -214,8 +235,7 @@ class DiaPenceresi(_ArkaPlanPencere):
                                     "eklenir, varsa guncellenir. Her cagri 0,0125 kontor harcar.",
                  font=('Arial', 9, 'italic'), bg='#f0f0f0', fg='#555', wraplength=720,
                  justify='left').pack(anchor='w', padx=10, pady=4)
-        tk.Label(self.pencere, text='Klasor: ' + musteri_klasoru, font=('Arial', 9, 'bold'),
-                 bg='#f0f0f0', fg='#2c3e50', wraplength=720, justify='left').pack(anchor='w', padx=10)
+        self.klasor_etiketi()
 
         cerceve = tk.Frame(self.pencere, bg='#f0f0f0')
         cerceve.pack(fill=tk.X, padx=10)

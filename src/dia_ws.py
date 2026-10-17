@@ -26,11 +26,15 @@ def sunucu_kodu_temizle(deger):
 
 
 class DiaHatasi(Exception):
-    def __init__(self, code, msg, servis=''):
+    def __init__(self, code, msg, servis='', istek=None):
         self.code = str(code)
         self.msg = str(msg)
         self.servis = servis
-        super().__init__((servis + ': ' if servis else '') + self.code + ' - ' + self.msg)
+        self.istek = istek
+        metin = (servis + ': ' if servis else '') + self.code + ' - ' + self.msg
+        if istek is not None:
+            metin += '\n  Gonderilen istek: ' + json.dumps(istek, ensure_ascii=False, default=str)[:800]
+        super().__init__(metin)
 
 
 class DiaKontorHatasi(DiaHatasi):
@@ -139,22 +143,24 @@ class DiaIstemci:
             if deneme == 0 and _oturum_dustu_mu(code, msg):
                 self.session_id = None
                 continue
+            gizli = {servis: dict(govde, session_id='***')}
             if code == '406':
-                raise DiaKontorHatasi(code, msg, servis)
+                raise DiaKontorHatasi(code, msg, servis, gizli)
             if _yetki_hatasi_mi(msg):
-                raise DiaYetkiHatasi(code, msg, servis)
-            raise DiaHatasi(code, msg, servis)
+                raise DiaYetkiHatasi(code, msg, servis, gizli)
+            raise DiaHatasi(code, msg, servis, gizli)
 
     def kontor_sorgula(self):
         cevap = self.cagir('sis', 'sis_kontor_sorgula', firma_donem=False)
         return cevap.get('result', cevap.get('msg'))
 
     def listele(self, modul, servis, filters=None, sorts=None, params=None, sayfa=1000):
-        """Tum kayitlari sayfa sayfa getirir."""
+        """Tum kayitlari sayfa sayfa getirir. Istek bicimi DIA dokumanindaki ornekle aynidir
+        (bos filtre "" olarak gider)."""
         sonuc = []
         offset = 0
         while True:
-            cevap = self.cagir(modul, servis, filters=filters or [], sorts=sorts or [],
+            cevap = self.cagir(modul, servis, filters=filters or '', sorts=sorts or [],
                                params=params or {}, limit=sayfa, offset=offset)
             satirlar = cevap.get('result', [])
             if not isinstance(satirlar, list):

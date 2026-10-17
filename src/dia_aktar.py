@@ -152,8 +152,11 @@ def _liste_parametreleri(eslesme, kod_alani):
 def mevcut_kartlar(istemci, ayar, eslesme):
     """DIA'daki kartlarin {kod: _key} sozlugu."""
     kod_alani = ayar['kod_alani']
-    satirlar = istemci.listele(ayar['modul'], ayar['servis_listele'],
-                               params=_liste_parametreleri(eslesme, kod_alani))
+    params = _liste_parametreleri(eslesme, kod_alani)
+    if ayar['servis_listele'] == 'scf_carikart_listele':
+        params.setdefault('irsaliyeleriDahilEt', 'False')   # DIA ornegindeki gibi; bakiye hesabini hafifletir
+    satirlar = istemci.listele(ayar['modul'], ayar['servis_listele'], params=params,
+                               sorts=[{'field': kod_alani, 'sorttype': 'ASC'}])
     return {str(s.get(kod_alani)).strip(): s.get('_key') for s in satirlar if s.get(kod_alani) is not None}
 
 

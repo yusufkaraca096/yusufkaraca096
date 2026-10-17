@@ -37,12 +37,20 @@ class DiaKontorHatasi(DiaHatasi):
     """406 CREDIT_ERROR: kontor yetersiz."""
 
 
-# Oturumun dustugunu gosteren cevaplar (419 LOGIN_TIMEOUT, 'Invalid session')
-_OTURUM_KODLARI = ('419', '401')
+class DiaYetkiHatasi(DiaHatasi):
+    """INSUFFICIENT_PRIVILEGES: web servis kullanicisinin DIA'da yetkisi yok."""
 
 
 def _oturum_dustu_mu(code, msg):
-    return str(code) in _OTURUM_KODLARI or 'invalid session' in str(msg).lower()
+    """419 LOGIN_TIMEOUT veya 'Invalid session'. 401 yetki hatasi da olabildigi icin tek basina sayilmaz."""
+    m = str(msg).lower()
+    if 'insufficient_privileges' in m or 'yetki' in m:
+        return False
+    return str(code) == '419' or 'invalid session' in m or 'login_timeout' in m
+
+
+def _yetki_hatasi_mi(msg):
+    return 'insufficient_privileges' in str(msg).lower()
 
 
 class DiaIstemci:
@@ -133,6 +141,8 @@ class DiaIstemci:
                 continue
             if code == '406':
                 raise DiaKontorHatasi(code, msg, servis)
+            if _yetki_hatasi_mi(msg):
+                raise DiaYetkiHatasi(code, msg, servis)
             raise DiaHatasi(code, msg, servis)
 
     def kontor_sorgula(self):

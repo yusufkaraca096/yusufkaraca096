@@ -11,7 +11,7 @@ import os
 
 import pandas as pd
 
-from dia_ws import DiaHatasi, DiaKontorHatasi
+from dia_ws import DiaHatasi, DiaKontorHatasi, DiaYetkiHatasi
 from il_ilce import anahtar
 
 ESLESME_DOSYASI = 'dia_eslesme.json'
@@ -259,7 +259,7 @@ def aktar(istemci, df, modul_adi, eslesme, kuru_calistir=False, log=print):
                     adres_kart[adres_ayar['bag_alani']] = yeni
                     try:
                         istemci.ekle(ayar['modul'], adres_ayar['servis_ekle'], adres_kart)
-                    except DiaKontorHatasi:
+                    except (DiaKontorHatasi, DiaYetkiHatasi):
                         raise
                     except DiaHatasi as e:
                         kayit['mesaj'] = (kayit['mesaj'] + ' | ' if kayit['mesaj'] else '') + 'Adres: ' + e.msg
@@ -271,6 +271,11 @@ def aktar(istemci, df, modul_adi, eslesme, kuru_calistir=False, log=print):
             kayit.update(sonuc='HATA', mesaj='KONTOR YETERSIZ: ' + e.msg)
             rapor.append(kayit)
             log('  DURDURULDU: kontor yetersiz.')
+            break
+        except DiaYetkiHatasi as e:
+            kayit.update(sonuc='HATA', mesaj='YETKI: ' + e.msg)
+            rapor.append(kayit)
+            log('  DURDURULDU: web servis kullanicisinin yetkisi yok -> ' + e.msg)
             break
         except DiaHatasi as e:
             kayit.update(sonuc='HATA', mesaj=e.code + ' - ' + e.msg)

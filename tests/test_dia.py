@@ -17,7 +17,8 @@ from dia_aktar import aktar, kart_olustur, eslesme_yukle, VARSAYILAN_ESLESME  # 
 class SahteDia:
     """Gelen istekleri kaydeder, DIA benzeri cevap uretir."""
 
-    def __init__(self, mevcut_cariler=None, oturum_dusur=0, kontor=10 ** 9):
+    def __init__(self, mevcut_cariler=None, oturum_dusur=0, kontor=10 ** 9, yetkisiz=()):
+        self.yetkisiz = set(yetkisiz)
         self.istekler = []
         self.mevcut = dict(mevcut_cariler or {})   # kod -> _key
         self.oturum_dusur = oturum_dusur
@@ -41,6 +42,8 @@ class SahteDia:
             self.oturum_dusur -= 1
             self.session = None
             return {'code': '419', 'msg': 'LOGIN_TIMEOUT'}
+        if servis in self.yetkisiz:
+            return {'code': '401', 'msg': 'INSUFFICIENT_PRIVILEGES -> Web Servis kullanıcınızın yetkisini ayarlayınız!'}
         if servis == 'sis_kontor_sorgula':
             return {'code': '200', 'result': self.kontor}
         if servis.endswith('_listele'):
@@ -123,6 +126,19 @@ class IstemciTest(unittest.TestCase):
             self.assertEqual(sunucu_kodu_temizle(g), 'racabilisim', g)
         d = DiaIstemci('https://racabilisim.ws.dia.com.tr/api/v3/', 'u', 'p', 'k', 1, 1)
         self.assertEqual(d.temel_url, 'https://racabilisim.ws.dia.com.tr/api/v3')
+
+    def test_yetki_hatasi_yeniden_login_yapmaz(self):
+        from dia_ws import DiaYetkiHatasi
+        s = SahteDia(yetkisiz={'scf_carikart_listele'})
+        with self.assertRaises(DiaYetkiHatasi):
+            istemci(s).listele('scf', 'scf_carikart_listele')
+        self.assertEqual(s.servisler().count('login'), 1)
+
+    def test_yetki_hatasi_aktarimi_durdurur(self):
+        s = SahteDia(yetkisiz={'scf_carikart_ekle'})
+        rapor = aktar(istemci(s), cari_df(), 'cari', copy.deepcopy(VARSAYILAN_ESLESME), log=lambda m: None)
+        self.assertEqual(len(rapor), 1)
+        self.assertTrue(rapor['mesaj'][0].startswith('YETKI'))
 
     def test_yeni_key(self):
         self.assertEqual(yeni_key({'key': 5}), 5)

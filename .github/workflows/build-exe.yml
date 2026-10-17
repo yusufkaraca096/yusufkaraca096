@@ -9,6 +9,9 @@ on:
       - '.github/workflows/build-exe.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -33,3 +36,15 @@ jobs:
         with:
           name: DIA_Veri_Temizleme
           path: src/dist/DIA_Veri_Temizleme.exe
+
+      - name: Indirme linkini guncelle (son-surum)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete son-surum --yes --cleanup-tag || true
+          gh release create son-surum src/dist/DIA_Veri_Temizleme.exe \
+            --target "${{ github.sha }}" \
+            --title "DIA Veri Temizleme - son surum" \
+            --notes "Kurulum gerekmez: DIA_Veri_Temizleme.exe dosyasini indirip cift tiklayin. Commit: ${{ github.sha }}"

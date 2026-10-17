@@ -214,6 +214,8 @@ class DiaPenceresi(_ArkaPlanPencere):
                                     "eklenir, varsa guncellenir. Her cagri 0,0125 kontor harcar.",
                  font=('Arial', 9, 'italic'), bg='#f0f0f0', fg='#555', wraplength=720,
                  justify='left').pack(anchor='w', padx=10, pady=4)
+        tk.Label(self.pencere, text='Klasor: ' + musteri_klasoru, font=('Arial', 9, 'bold'),
+                 bg='#f0f0f0', fg='#2c3e50', wraplength=720, justify='left').pack(anchor='w', padx=10)
 
         cerceve = tk.Frame(self.pencere, bg='#f0f0f0')
         cerceve.pack(fill=tk.X, padx=10)
@@ -286,7 +288,10 @@ class DiaPenceresi(_ArkaPlanPencere):
             ist.login()
             self.log('Giris OK.')
             try:
-                self.log('Kalan kontor: ' + str(ist.kontor_sorgula()))
+                kontor = ist.kontor_sorgula()
+                if isinstance(kontor, dict):
+                    kontor = kontor.get('kontorsayisi', kontor)
+                self.log('Kalan kontor: ' + str(kontor))
             except Exception as e:
                 self.log('Kontor sorgulanamadi: ' + str(e))
             ist.logout()

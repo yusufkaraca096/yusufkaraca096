@@ -284,13 +284,32 @@ def aktar(istemci, df, modul_adi, eslesme, kuru_calistir=False, log=print):
     return rdf
 
 
+def eksik_dosya_mesaji(klasor, modul):
+    """*_dia_hazir.xlsx yoksa sebebini ve ne yapilacagini anlatir."""
+    hazir = modul['cikti_dosya']
+    inceleme = hazir.replace('.xlsx', '_INCELEME.xlsx')
+    girdi = modul.get('girdi_dosya', '')
+    satirlar = [hazir + ' bulunamadi.', 'Klasor: ' + klasor]
+    if os.path.exists(os.path.join(klasor, inceleme)):
+        satirlar.append("Sebep: CALISTIR 'Inceleme' modunda calismis; bu mod sadece " + inceleme +
+                        " uretir. Ana ekranda 'Otomatik Sil' (veya E isaretledikten sonra 'Uygula') "
+                        "secip CALISTIR'a basin.")
+    elif girdi and os.path.exists(os.path.join(klasor, girdi)):
+        satirlar.append('Sebep: ' + girdi + " var ama henuz temizlenmemis. Ana ekranda modulu ve "
+                        "'Otomatik Sil' secip CALISTIR'a basin.")
+    else:
+        satirlar.append('Sebep: bu klasorde ' + (girdi or 'girdi dosyasi') + " de yok. Once 'Logo'dan Cek' "
+                        "ile cekin veya dosyayi bu klasore koyun; ana ekrandaki Musteri Klasoru dogru mu?")
+    return '\n'.join(satirlar)
+
+
 def dosyadan_aktar(istemci, klasor, modul_adi, kurallar, kuru_calistir=False, log=print):
     """<cikti_dosya> (ornek cari_dia_hazir.xlsx) dosyasini okuyup aktarir, raporu klasore yazar."""
     from dia_isle import METIN_KOLONLAR
     modul = kurallar[modul_adi]
     hazir = os.path.join(klasor, modul['cikti_dosya'])
     if not os.path.exists(hazir):
-        raise FileNotFoundError(modul['cikti_dosya'] + " bulunamadi. Once CALISTIR ile temizleyin.")
+        raise FileNotFoundError(eksik_dosya_mesaji(klasor, modul))
     log('Okunuyor: ' + modul['cikti_dosya'])
     df = pd.read_excel(hazir, dtype={k: str for k in METIN_KOLONLAR})
     if 'SIL_ONAY' in df.columns:

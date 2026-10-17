@@ -172,6 +172,16 @@ class AktarimTest(unittest.TestCase):
         rapor = aktar(istemci(s), cari_df(), 'cari', es, log=lambda m: None)
         self.assertEqual(set(rapor['islem']), {'ATLA'})
 
+    def test_eksik_dosya_mesaji(self):
+        from dia_aktar import eksik_dosya_mesaji
+        modul = {'cikti_dosya': 'cari_dia_hazir.xlsx', 'girdi_dosya': 'cari_listesi.xlsx'}
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIn('Logo', eksik_dosya_mesaji(d, modul))
+            open(os.path.join(d, 'cari_listesi.xlsx'), 'w').close()
+            self.assertIn('henuz temizlenmemis', eksik_dosya_mesaji(d, modul))
+            open(os.path.join(d, 'cari_dia_hazir_INCELEME.xlsx'), 'w').close()
+            self.assertIn('Inceleme', eksik_dosya_mesaji(d, modul))
+
     def test_eslesme_dosyasi(self):
         with tempfile.TemporaryDirectory() as d:
             es = eslesme_yukle(d)

@@ -10,7 +10,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from dia_ws import DiaIstemci, DiaHatasi, yeni_key  # noqa: E402
+from dia_ws import DiaIstemci, DiaHatasi, yeni_key, sunucu_kodu_temizle  # noqa: E402
 from dia_aktar import aktar, kart_olustur, eslesme_yukle, VARSAYILAN_ESLESME  # noqa: E402
 
 
@@ -115,6 +115,14 @@ class IstemciTest(unittest.TestCase):
         rows = istemci(s).listele('scf', 'scf_carikart_listele', sayfa=10)
         self.assertEqual(len(rows), 25)
         self.assertEqual(len(s.istek('scf_carikart_listele')), 3)
+
+    def test_sunucu_kodu_her_bicimde(self):
+        for g in ['racabilisim', ' RacaBilisim ', 'racabilisim.ws.dia.com.tr',
+                  'https://racabilisim.ws.dia.com.tr/api/v3/', 'https://racabilisim.ws.dia.com.tr/api/v3/scf/json',
+                  'racabilisim.ws.dia.com.tr:443']:
+            self.assertEqual(sunucu_kodu_temizle(g), 'racabilisim', g)
+        d = DiaIstemci('https://racabilisim.ws.dia.com.tr/api/v3/', 'u', 'p', 'k', 1, 1)
+        self.assertEqual(d.temel_url, 'https://racabilisim.ws.dia.com.tr/api/v3')
 
     def test_yeni_key(self):
         self.assertEqual(yeni_key({'key': 5}), 5)

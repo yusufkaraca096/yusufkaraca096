@@ -218,7 +218,7 @@ class DiaPenceresi(_ArkaPlanPencere):
         cerceve = tk.Frame(self.pencere, bg='#f0f0f0')
         cerceve.pack(fill=tk.X, padx=10)
         self.form(cerceve, [
-            ('sunucu_kodu', 'Sunucu Kodu (xxx.ws.dia.com.tr):', '', False),
+            ('sunucu_kodu', 'Sunucu Kodu (ör. racabilisim):', '', False),
             ('kullanici', 'Kullanici:', '', False),
             ('sifre', 'Sifre (kaydedilmez):', '', True),
             ('apikey', 'API Key:', '', True),

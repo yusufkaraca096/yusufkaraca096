@@ -7,9 +7,22 @@ Servis: <modul>/json -> {"<servis_adi>": {"session_id", "firma_kodu", "donem_kod
 Kaynak: https://doc.dia.com.tr/doku.php?id=gelistirici:wsapi:anasayfa
 """
 import json
+import re
 import time
 import urllib.error
 import urllib.request
+
+
+def sunucu_kodu_temizle(deger):
+    """'racabilisim', 'racabilisim.ws.dia.com.tr' veya
+    'https://racabilisim.ws.dia.com.tr/api/v3/' -> 'racabilisim'"""
+    s = str(deger).strip().lower()
+    s = re.sub(r'^[a-z]+://', '', s)       # https://
+    s = s.split('/')[0]                      # /api/v3/...
+    s = s.split(':')[0]                      # :443
+    s = re.sub(r'\.ws\.dia\.com\.tr$', '', s)
+    s = re.sub(r'\.dia\.com\.tr$', '', s)
+    return s
 
 
 class DiaHatasi(Exception):
@@ -38,7 +51,7 @@ class DiaIstemci:
         """temel_url: test icin (varsayilan https://<sunucu>.ws.dia.com.tr/api/v3)
         gonderici : test icin (url, sozluk) -> sozluk cagrilabilir nesnesi"""
         self.temel_url = (temel_url or
-                          'https://' + str(sunucu_kodu).strip() + '.ws.dia.com.tr/api/v3').rstrip('/')
+                          'https://' + sunucu_kodu_temizle(sunucu_kodu) + '.ws.dia.com.tr/api/v3').rstrip('/')
         self.kullanici = kullanici
         self.sifre = sifre
         self.apikey = apikey

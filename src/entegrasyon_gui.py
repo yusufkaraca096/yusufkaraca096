@@ -314,6 +314,15 @@ class DiaPenceresi(_ArkaPlanPencere):
                 self.log('Kalan kontor: ' + str(kontor))
             except Exception as e:
                 self.log('Kontor sorgulanamadi: ' + str(e))
+            # Kullanicinin yetkili oldugu firma/donemler (firma kodu yanlissa INSUFFICIENT_PRIVILEGES alinir)
+            try:
+                cevap = ist.cagir('sis', 'sis_yetkili_firma_donem_sube_depo', firma_donem=False)
+                sonuc = cevap.get('result', cevap.get('msg'))
+                self.log('Yetkili firma/donemler: ' + json.dumps(sonuc, ensure_ascii=False, default=str)[:1500])
+                self.log('>> Girdiginiz Firma Kodu ' + str(d['firma_kodu']) + ', Donem Kodu ' + str(d['donem_kodu'])
+                         + ' bu listede olmali.')
+            except Exception as e:
+                self.log('(Firma listesi alinamadi: ' + str(e)[:200] + ')')
             ist.logout()
         self.arka_planda(isi)
 

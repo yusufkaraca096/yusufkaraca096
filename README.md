@@ -14,6 +14,9 @@ muhasebe kodu, ürün ağacı) DIA'ya aktarılabilir hale getiren Tkinter uygula
 | `src/il_ilce_veri.py` | 81 il, 973 ilçe listesi |
 | `src/kurallar.py` | `kurallar.xlsx` yoksa kullanılan varsayılan kurallar |
 | `tests/` | Otomatik testler: `python -m unittest discover -s tests` |
+| `src/logo_kaynak.py` | Logo (MS SQL) veritabanından cari/stok okuma (sadece okur) |
+| `src/dia_ws.py`, `src/dia_aktar.py` | DIA web servis istemcisi ve aktarım (ekle/güncelle, rapor) |
+| `src/entegrasyon_gui.py` | "Logo'dan Çek" ve "DIA'ya Gönder" pencereleri |
 | `docs/ENTEGRASYON.md` | DIA web servis + ETA / Logo / Netsis veritabanı araştırması |
 | `sql/` | Şema keşif ve Logo/Netsis/ETA'dan cari-stok çekme sorguları (sadece okur) |
 
@@ -37,6 +40,23 @@ ayar için varsayılan değer kullanılır.
 
 Yeni bir ayar eklemek için `src/_ortak.py` içindeki `AYAR_TANIMLARI` listesine bir satır
 ekleyin ve kodda `ayar(modul, 'ayar_adi')` ile okuyun; Ayarlar penceresi onu otomatik gösterir.
+
+## Logo → DIA aktarımı
+
+1. **🔌 Logo'dan Çek**: SQL sunucu, veritabanı, firma no girin → *Bağlantı Testi* → *Cari Çek* / *Stok Çek*.
+   Müşteri klasörüne `cari_listesi.xlsx` / `stok_listesi.xlsx` yazılır (eskisi `.bak` yedeklenir).
+   Bilgisayarda **ODBC Driver 17 (veya 18) for SQL Server** kurulu olmalı. Logo verisi değiştirilmez.
+2. Ana ekranda modülü seçip **▶ CALISTIR** (temizleme, il/ilçe, VKN, mükerrer).
+3. **☁ DIA'ya Gönder**: sunucu kodu, kullanıcı, şifre, API key, firma/dönem kodu → *Bağlantı Testi* (kontörü gösterir)
+   → önce **Kuru çalıştır** işaretliyken *GÖNDER* → `cari_DIA_KURU_RAPOR.xlsx`'i kontrol edin
+   → işareti kaldırıp gerçek gönderim → `cari_DIA_AKTARIM_RAPORU.xlsx` (her satırın sonucu).
+   Kod DIA'da yoksa eklenir, varsa güncellenir (veya atlanır).
+4. **Alan Eslemesi** butonu `dia_eslesme.json`'u açar: hangi Excel kolonunun hangi DIA alanına gideceği.
+   `?` ile başlayan satırlar doğrulanmamış alanlardır ve gönderilmez; DIA dokümanına göre kontrol edip
+   başındaki `?` işaretini silin.
+
+Bağlantı ayarları müşteri klasöründe `entegrasyon.json`'a yazılır; **şifreler hiçbir zaman kaydedilmez**,
+API key sadece "hatırla" işaretlenirse kaydedilir.
 
 ## EXE oluşturma (Windows)
 

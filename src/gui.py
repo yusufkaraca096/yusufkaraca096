@@ -39,7 +39,7 @@ class DiaGUI:
     def __init__(self, root):
         self.root = root
         self.root.title('DIA Kurulum Veri Temizleme')
-        self.root.geometry('1000x750')
+        self.root.geometry('1000x800')
         self.root.configure(bg='#f0f0f0')
 
         if getattr(sys, 'frozen', False):
@@ -149,6 +149,18 @@ class DiaGUI:
         tk.Button(btn_frame, text='Temizle', command=self.cikti_temizle,
                   bg='#95a5a6', fg='white', font=('Arial', 10),
                   padx=15, pady=10).pack(side=tk.RIGHT, padx=3)
+
+        # Entegrasyon: Logo -> temizle -> DIA
+        ent_frame = tk.Frame(self.root, bg='#f0f0f0')
+        ent_frame.pack(fill=tk.X, padx=15)
+        tk.Label(ent_frame, text='Entegrasyon:', font=('Arial', 10, 'bold'),
+                 bg='#f0f0f0').pack(side=tk.LEFT, padx=(3, 8))
+        tk.Button(ent_frame, text="🔌 Logo'dan Çek", command=self.logo_ac,
+                  bg='#c0392b', fg='white', font=('Arial', 11, 'bold'),
+                  padx=15, pady=6).pack(side=tk.LEFT, padx=3)
+        tk.Button(ent_frame, text="☁ DIA'ya Gönder", command=self.dia_ac,
+                  bg='#2980b9', fg='white', font=('Arial', 11, 'bold'),
+                  padx=15, pady=6).pack(side=tk.LEFT, padx=3)
 
         # Cikti
         cikti_frame = tk.LabelFrame(
@@ -321,6 +333,14 @@ class DiaGUI:
 
     def ayarlar_ac(self):
         AyarlarPenceresi(self.root, self.musteri_klasoru, self.program_klasoru)
+
+    def logo_ac(self):
+        from entegrasyon_gui import LogoPenceresi
+        LogoPenceresi(self.root, self.musteri_klasoru, self.log)
+
+    def dia_ac(self):
+        from entegrasyon_gui import DiaPenceresi
+        DiaPenceresi(self.root, self.musteri_klasoru, self.log)
 
 
 

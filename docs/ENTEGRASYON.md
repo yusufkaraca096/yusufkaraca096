@@ -101,7 +101,20 @@ Operatörler: `=`, `!=`, `IN` (virgülle çoklu değer)… Değişenleri çekmek
 Sadece bazı kolonları almak için `params` içinde kolon seçimi yapılabilir. Stok listesinde
 `miktarlariHesapla` parametresi miktar hesabını kapatıp hızlandırır.
 
-### 1.5 Bu proje için kullanılacak servisler
+### 1.5 Kontör, hatalar ve diğer servisler ✅
+- **Kontör:** her web servis çağrısı **0,0125 kontör** düşer; `login` / `logout` düşmez.
+  Kalan bakiye: `sis_kontor_sorgula`. Toplu aktarımda (ör. 10.000 cari = ~125 kontör) önceden kontrol edin.
+- **Hata kodları:** `406` CREDIT_ERROR (kontör yetersiz), `419` LOGIN_TIMEOUT (oturum düştü → yeniden login),
+  `400` geçersiz veri (`msg` alanında açıklama). Detay: [Hata Takibi](https://doc.dia.com.tr/doku.php?id=gelistirici%3Awsapi%3Ahata_takibi).
+- **Getir servisleri** (`*_getir`): `key` (Integer64, kaydın `_key`'i) zorunlu; silmede de `key` zorunlu.
+- **Şehir anahtarı:** `sis_sehirler_listele` (sis modülü, `filters/sorts/limit/offset`) → il adından
+  `_key_sis_sehirler` bulmak için. Adres eklerken bu key kullanılır.
+- **Test aracı:** [DİA Web Service Tester](https://doc.dia.com.tr/doku.php?id=gelistirici:wsapi:wstester).
+- Ana sayfa bölümleri: Genel Bakış (kontör, güvenlik, isimlendirme, input/response) · Test Aracı ·
+  Session & API Key (apikey alma, login, logout) · Yetkili firma/dönem bilgilerinin alınması ·
+  Servis türleri (listele, getir, ekle, güncelle) · Hata takibi · modül sayfaları (SIS, SCF, RPR, GTS, EFA…).
+
+### 1.6 Bu proje için kullanılacak servisler
 | İş | Servis | Model (alan listesi için) |
 |---|---|---|
 | Cari kart | `scf_carikart_ekle` / `_guncelle` / `_listele` | `ScfCarikartModel` |
@@ -116,7 +129,7 @@ Model alanlarından doğrulananlar: `carikartkodu`, `unvan`, `carikarttipi` Unic
 > ⚠️ Adreste il/ilçe **`_key_sis_sehirler`** gibi bağlantı alanıyla tutulur; il adını DIA'daki şehir
 > tablosundaki kayda eşlemek gerekir. Bizim il/ilçe düzeltmesi (resmi il adları) bu eşlemeyi kolaylaştırır.
 
-### 1.6 Önerilen akış
+### 1.7 Önerilen akış
 ```
 Kaynak (Logo/Netsis/ETA SQL veya Excel)
    → DIA_Veri_Temizleme (temizle + mükerrer + il/ilçe + VKN)
@@ -255,7 +268,7 @@ Sol kolon DIA_Veri_Temizleme'nin kullandığı DIA alan adlarıdır (`kurallar.p
 ---
 
 ## 6. Kaynaklar
-- DIA: [Genel Bakış](https://doc.dia.com.tr/doku.php?id=gelistirici%3Awsapi%3Agenel) ·
+- DIA: [Ana sayfa](https://doc.dia.com.tr/doku.php?id=gelistirici:wsapi:anasayfa) · [Genel Bakış](https://doc.dia.com.tr/doku.php?id=gelistirici%3Awsapi%3Agenel) ·
   [Session & API Key](https://doc.dia.com.tr/doku.php?id=gelistirici%3Awsapi%3Asession) ·
   [SCF Cari](https://doc.dia.com.tr/doku.php?id=gelistirici%3Awsapi%3Acari) ·
   [Ekleme servisleri](https://doc.dia.com.tr/doku.php?id=gelistirici%3Awsapi%3Aservis_turu_ekleme) ·

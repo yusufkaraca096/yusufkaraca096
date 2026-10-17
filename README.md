@@ -14,6 +14,8 @@ muhasebe kodu, ürün ağacı) DIA'ya aktarılabilir hale getiren Tkinter uygula
 | `src/il_ilce_veri.py` | 81 il, 973 ilçe listesi |
 | `src/kurallar.py` | `kurallar.xlsx` yoksa kullanılan varsayılan kurallar |
 | `tests/` | Otomatik testler: `python -m unittest discover -s tests` |
+| `docs/ENTEGRASYON.md` | DIA web servis + ETA / Logo / Netsis veritabanı araştırması |
+| `sql/` | Şema keşif ve Logo/Netsis/ETA'dan cari-stok çekme sorguları (sadece okur) |
 
 ## Parametrik ayarlar
 

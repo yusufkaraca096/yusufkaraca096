@@ -35,6 +35,18 @@ def kurallari_getir(klasor):
     return dia_isle.kurallari_yukle()
 
 
+def firma_donem_ozeti(sonuc):
+    """sis_yetkili_firma_donem_sube_depo cevabi -> [(firmakodu, firmaadi, [(donemkodu, yil), ...]), ...]"""
+    ozet = []
+    for f in sonuc if isinstance(sonuc, list) else []:
+        if not isinstance(f, dict) or 'firmakodu' not in f:
+            continue
+        donemler = [(dn.get('donemkodu'), str(dn.get('baslangictarihi') or '')[:4])
+                    for dn in f.get('donemler') or [] if isinstance(dn, dict)]
+        ozet.append((f['firmakodu'], f.get('firmaadi', ''), donemler))
+    return sorted(ozet, key=lambda x: (str(x[0]).zfill(6)))
+
+
 class _ArkaPlanPencere:
     """Uzun islemleri ayri thread'de calistirir; log satirlari kuyruk ile pencereye akar."""
 
@@ -317,10 +329,23 @@ class DiaPenceresi(_ArkaPlanPencere):
             # Kullanicinin yetkili oldugu firma/donemler (firma kodu yanlissa INSUFFICIENT_PRIVILEGES alinir)
             try:
                 cevap = ist.cagir('sis', 'sis_yetkili_firma_donem_sube_depo', firma_donem=False)
-                sonuc = cevap.get('result', cevap.get('msg'))
-                self.log('Yetkili firma/donemler: ' + json.dumps(sonuc, ensure_ascii=False, default=str)[:1500])
-                self.log('>> Girdiginiz Firma Kodu ' + str(d['firma_kodu']) + ', Donem Kodu ' + str(d['donem_kodu'])
-                         + ' bu listede olmali.')
+                firmalar = firma_donem_ozeti(cevap.get('result', cevap.get('msg')))
+                if not firmalar:
+                    raise ValueError('bos liste')
+                self.log('Yetkili firmalar (Firma Kodu - Adi : Donem Kodlari):')
+                for kod, ad, donemler in firmalar:
+                    self.log('   ' + str(kod) + ' - ' + str(ad) + ' : ' +
+                             ', '.join(str(dk) + ' (' + str(yil) + ')' for dk, yil in donemler))
+                secili = next((f for f in firmalar if str(f[0]) == str(d['firma_kodu']).strip()), None)
+                if secili is None:
+                    self.log('!! DIKKAT: Girdiginiz Firma Kodu ' + str(d['firma_kodu']) + ' bu listede YOK. '
+                             'Yukaridaki kodlardan birini yazin (aksi halde yetki hatasi alinir).')
+                elif str(d['donem_kodu']).strip() not in [str(dk) for dk, _ in secili[2]]:
+                    self.log('!! DIKKAT: Firma ' + str(secili[0]) + ' icin Donem Kodu ' + str(d['donem_kodu'])
+                             + ' yok. Gecerli donemler: ' + ', '.join(str(dk) for dk, _ in secili[2]))
+                else:
+                    self.log('Firma ' + str(secili[0]) + ' (' + str(secili[1]) + '), donem '
+                             + str(d['donem_kodu']) + ' gecerli.')
             except Exception as e:
                 self.log('(Firma listesi alinamadi: ' + str(e)[:200] + ')')
             ist.logout()

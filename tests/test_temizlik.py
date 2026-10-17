@@ -135,10 +135,14 @@ class UcTanUcaTest(unittest.TestCase):
             dia_isle.KLASOR = d
             dia_isle.modul_isle('cari', dia_isle.kurallari_yukle(), mukerrer_mod='otomatik')
             df = pd.read_excel(os.path.join(d, 'cari_dia_hazir.xlsx'), dtype=str)
+            fark = pd.read_excel(os.path.join(d, 'cari_dia_hazir_DEGISIKLIKLER.xlsx'), dtype=str)
+        self.assertIn('0532 123 45 67', fark['Eski Değer'].tolist())
         self.assertEqual(df['verginumarasi'][0], '0123456789')
         self.assertEqual(df['sehir'].tolist(), ['İSTANBUL', 'ŞANLIURFA', 'İSTANBUL'])
         self.assertEqual(df['ilce'].tolist(), ['KADIKÖY', 'SİVEREK', 'KADIKÖY'])
-        self.assertEqual(df['telefon1'][0], '5321234567')
+        # cep numarasi telefon1'den ceptel'e tasinir (cep_ayir)
+        self.assertEqual(df['ceptel'][0], '5321234567')
+        self.assertTrue(pd.isna(df['telefon1'][0]))
         self.assertEqual(df['cari kayitturu'][0], 'KRLS')
 
 

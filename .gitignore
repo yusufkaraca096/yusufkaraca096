@@ -4,3 +4,4 @@ build/
 dist/
 *.spec.bak
 *.bak
+esleme_hafizasi.json

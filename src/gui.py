@@ -862,10 +862,10 @@ class AyarlarPenceresi:
 
     def eksik_ayarlari_ekle(self):
         """Yeni parametrik ayarlardan bu modulde olmayanlari varsayilan degerle ekler."""
-        from _ortak import AYAR_TANIMLARI
+        from _ortak import modul_ayar_tanimlari
         mevcut = {str(self.ay_tree.item(i, 'values')[0]) for i in self.ay_tree.get_children()}
         eklenen = 0
-        for a in AYAR_TANIMLARI:
+        for a in modul_ayar_tanimlari(self.modul_var.get()):
             if a['ayar'] in mevcut:
                 continue
             deger = a['varsayilan']

@@ -12,8 +12,9 @@ from _ortak import (bosluk_temizle, birebir_mukerrer_sil, kod_mukerrer_sil, kod_
                     hiyerarsi_kontrol, sayisal_metin_temizle, vkn_tc_kontrol,
                     mukerrer_grup_raporu, cari_kayitturu_ata, sutun_sirala,
                     kdv_gecerli_mi, tarih_karsilastir, kod_seviye_kontrol,
-                    vkn_isle, tc_isle, ayar)
+                    vkn_isle, tc_isle, ayar, KAYNAK_SATIR)
 from il_ilce import il_ilce_duzelt
+import ek_kontroller
 
 # Calisma klasoru: once bulunulan klasor (kurallar.xlsx varsa), yoksa script klasoru
 _cwd = os.getcwd()
@@ -93,14 +94,14 @@ def kontrol_uyari_ekle(df, rapor):
     df = df.reset_index(drop=True)
     if 'KONTROL_UYARI' not in df.columns:
         df['KONTROL_UYARI'] = 'OK'
+    # df.at ile tek tek yazmak buyuk dosyada yavas: listede biriktirip bir kerede yaz
+    uyarilar = ['OK' if pd.isna(v) or v == '' else str(v) for v in df['KONTROL_UYARI'].tolist()]
     for r in rapor:
         idx = r['satir'] - 2
         if 0 <= idx < len(df):
-            mevcut = df.at[idx, 'KONTROL_UYARI']
-            if mevcut == 'OK':
-                df.at[idx, 'KONTROL_UYARI'] = r['alan'] + ': ' + r['durum']
-            else:
-                df.at[idx, 'KONTROL_UYARI'] += ' | ' + r['alan'] + ': ' + r['durum']
+            yeni = r['alan'] + ': ' + r['durum']
+            uyarilar[idx] = yeni if uyarilar[idx] == 'OK' else uyarilar[idx] + ' | ' + yeni
+    df['KONTROL_UYARI'] = uyarilar
     return df
 
 
@@ -133,6 +134,9 @@ def veri_temizle(df, modul, modul_adi, kurallar):
         'demirbas': ['TUTAR', 'MİKTAR'],
     }
     sayi_alanlari = sayi_map.get(modul_adi, [])
+
+    # Hata degerleri (#YOK), gorunmez karakterler, bozuk Turkce: bos satir silinmeden once
+    df = ek_kontroller.hucre_on_temizlik(df, modul, modul_adi)
 
     df = temizlik_uygula(df, modul_adi, temizlik_kurallari,
                          kod_alanlari, sayi_alanlari)
@@ -259,6 +263,9 @@ def veri_temizle(df, modul, modul_adi, kurallar):
                         rapor.append({'satir': i + 2, 'alan': alan,
                                       'deger': str(df[alan].iloc[i]), 'durum': s[1]})
 
+    # Ek duzeltmeler: unvan, vergi dairesi, adresten il/ilce, cep, birim, fiyat, banka adi, hesap kodu ...
+    df = ek_kontroller.on_islem(df, modul, modul_adi, rapor)
+
     # Il / ilce: ayni hucreye yazilmis, yer degistirmis veya eksik il/ilce
     il_sutun = ayar(modul, 'il_sutunu')
     ilce_sutun = ayar(modul, 'ilce_sutunu')
@@ -310,6 +317,9 @@ def veri_temizle(df, modul, modul_adi, kurallar):
         if 'tarih' in df.columns:
             df = df.drop(columns=['tarih'])
 
+    # Ek kontroller (sadece uyari): zorunlu alan, uzunluk, benzer kayit, barkod, TDHP ...
+    df = ek_kontroller.son_kontroller(df, modul, modul_adi, rapor)
+
     if any(k.get('kural') == 'sutun_sirasi' and k.get('aktif', True) for k in temizlik_kurallari):
         df = sutun_sirala(df, modul_adi)
 
@@ -331,10 +341,12 @@ def modul_isle(modul_adi, kurallar, mukerrer_mod='incele', dry_run=False, klasor
         print("HATA: '" + modul_adi + "' modulu tanimli degil.")
         return
 
+    sonuc_ozet = {'modul': modul_adi, 'satir': 0, 'uyari': 0, 'duzeltilen': 0, 'gecersiz': 0, 'durum': ''}
     girdi_yolu = os.path.join(klasor, modul['girdi_dosya'])
     if not os.path.exists(girdi_yolu):
         print('UYARI: ' + modul['girdi_dosya'] + ' bulunamadi.')
-        return
+        sonuc_ozet['durum'] = 'DOSYA YOK'
+        return sonuc_ozet
 
     print('Dosya okunuyor: ' + modul['girdi_dosya'])
     sayfa_ayari = modul.get('sayfa', '')
@@ -348,20 +360,49 @@ def modul_isle(modul_adi, kurallar, mukerrer_mod='incele', dry_run=False, klasor
         df = birebir_mukerrer_sil(df)
         print('Birebir mukerrer sonrasi: ' + str(len(df)))
 
-    eslesme = modul.get('eslesme', {})
+    eslesme = dict(modul.get('eslesme', {}))
+    hafiza_aktif = ayar(modul, 'esleme_hafizasi', modul_adi)
+    if hafiza_aktif:
+        hafiza = ek_kontroller.esleme_hafizasi_yukle(KLASOR).get(modul_adi, {})
+        kullanilan = {b: a for b, a in hafiza.items() if b not in eslesme and b in df.columns and a not in df.columns}
+        if kullanilan:
+            print('  Esleme hafizasindan: ' + ', '.join(b + ' -> ' + a for b, a in kullanilan.items()))
+            eslesme.update(kullanilan)
     df = sutun_esle(df, eslesme)
+    if hafiza_aktif and modul.get('eslesme'):
+        ek_kontroller.esleme_hafizasi_kaydet(KLASOR, modul_adi, modul['eslesme'])
+
+    # Degisiklik raporu icin satirlarin okunan Excel'deki numarasi (gecici kolon)
+    df = df.copy()
+    df[KAYNAK_SATIR] = [i + 2 for i in df.index]
+    once = df.copy()
 
     df, rapor = veri_temizle(df, modul, modul_adi, kurallar)
+    rapor.extend(ek_kontroller.capraz_kontrol(df, modul, modul_adi, kurallar, klasor))
+    # Uyari satir numaralari bu andaki satirlara gore; mukerrer silinmeden once yazilir
+    df = kontrol_uyari_ekle(df, rapor)
+
+    if ayar(modul, 'degisiklik_raporu', modul_adi) and mukerrer_mod != 'uygula':
+        fark = ek_kontroller.degisiklikler(once, df)
+        fark_adi = modul['cikti_dosya'].replace('.xlsx', '_DEGISIKLIKLER.xlsx')
+        if dry_run:
+            print('  [DRY-RUN] Degisiklik: ' + str(len(fark)) + ' hucre (kaydedilmeyecek)')
+        elif not fark.empty:
+            try:
+                ek_kontroller.degisiklik_raporu_yaz(fark, df, os.path.join(klasor, fark_adi))
+                print('  Degisiklik raporu: ' + fark_adi + ' (' + str(len(fark)) + ' degisiklik)')
+            except Exception as e:
+                print('  UYARI: Degisiklik raporu yazilamadi: ' + str(e))
+    df = df.drop(columns=[KAYNAK_SATIR])
 
     mukerrer_kurallari = modul.get('mukerrer_kontrol', [])
-    rapor_uyarisi_ekle = True
+    sonuc_ozet.update(_rapor_sayilari(rapor))
 
     if mukerrer_kurallari:
         if mukerrer_mod == 'incele':
             sonuc = mukerrer_kontrol_et(df, mukerrer_kurallari, mod='sadece_isaretle')
             df = sonuc[0] if isinstance(sonuc, tuple) else sonuc
             df = sil_onay_sutunu_ekle(df)
-            df = kontrol_uyari_ekle(df, rapor)
             inceleme_adi = cikti_dosya_adi(modul, kurallar, 'inceleme')
             inceleme_yolu = os.path.join(klasor, inceleme_adi)
             if dry_run:
@@ -381,7 +422,9 @@ def modul_isle(modul_adi, kurallar, mukerrer_mod='incele', dry_run=False, klasor
                     print('  UYARI: Grup raporu: ' + str(e))
             print(">> Excel'de ac, silinecek satirlara SIL_ONAY sutununa 'E' yaz.")
             print('>> Sonra: python dia_isle.py ' + modul_adi + ' --uygula')
-            return
+            _ozet_rapor_yaz(rapor, modul, kurallar, klasor, dry_run)
+            sonuc_ozet.update(satir=len(df), durum='INCELEME BEKLIYOR')
+            return sonuc_ozet
 
         elif mukerrer_mod == 'uygula':
             inceleme_adi = cikti_dosya_adi(modul, kurallar, 'inceleme')
@@ -391,13 +434,13 @@ def modul_isle(modul_adi, kurallar, mukerrer_mod='incele', dry_run=False, klasor
                 inceleme_yolu = os.path.join(klasor, inceleme_adi2)
             if not os.path.exists(inceleme_yolu):
                 print('HATA: Inceleme dosyasi bulunamadi.')
-                return
+                sonuc_ozet['durum'] = 'INCELEME DOSYASI YOK'
+                return sonuc_ozet
             print('Inceleme dosyasi okunuyor: ' + os.path.basename(inceleme_yolu))
             # VKN/telefon gibi kolonlar metin okunur (bastaki 0 kaybolmasin)
             metin_kolonlar = {k: str for k in METIN_KOLONLAR}
             df = pd.read_excel(inceleme_yolu, dtype=metin_kolonlar)
             df, silinen_df = onayli_sil(df)
-            rapor_uyarisi_ekle = False
             if not silinen_df.empty:
                 silinen_adi = cikti_dosya_adi(modul, kurallar, 'silinenler')
                 silinen_yolu = os.path.join(klasor, silinen_adi)
@@ -413,25 +456,12 @@ def modul_isle(modul_adi, kurallar, mukerrer_mod='incele', dry_run=False, klasor
                 silinen_yolu = os.path.join(klasor, silinen_adi)
                 kaydet(silinen_df, silinen_yolu, dry_run)
 
-    if rapor_uyarisi_ekle:
-        df = kontrol_uyari_ekle(df, rapor)
-
     cikti_adi = cikti_dosya_adi(modul, kurallar, 'hazir')
     cikti_yolu = os.path.join(klasor, cikti_adi)
     kaydet(df, cikti_yolu, dry_run)
+    sonuc_ozet.update(satir=len(df), durum='HAZIR')
 
-    if rapor:
-        rapor_df = pd.DataFrame(rapor)
-        ozet_df = rapor_ozet(rapor)
-        ozet_adi = cikti_dosya_adi(modul, kurallar, 'ozet')
-        ozet_yolu = os.path.join(klasor, ozet_adi)
-        if dry_run:
-            print('  [DRY-RUN] Ozet rapor kaydedilmeyecek: ' + ozet_adi)
-        else:
-            with pd.ExcelWriter(ozet_yolu, engine='openpyxl') as writer:
-                ozet_df.to_excel(writer, sheet_name='OZET', index=False)
-                rapor_df.to_excel(writer, sheet_name='DETAY', index=False)
-            print('  Ozet rapor: ' + ozet_adi)
+    _ozet_rapor_yaz(rapor, modul, kurallar, klasor, dry_run)
 
     if dry_run:
         print('')
@@ -445,6 +475,26 @@ def modul_isle(modul_adi, kurallar, mukerrer_mod='incele', dry_run=False, klasor
             print('  Duzeltilen: ' + str(duzeltilen))
             print('  Gecersiz/Hatali: ' + str(hatali))
         print('============================================================')
+    return sonuc_ozet
+
+
+def _rapor_sayilari(rapor):
+    return {'uyari': len(rapor),
+            'duzeltilen': sum(1 for r in rapor if 'DÜZELTİLDİ' in r['durum']),
+            'gecersiz': sum(1 for r in rapor if 'GEÇERSİZ' in r['durum'] or 'HATALI' in r['durum'])}
+
+
+def _ozet_rapor_yaz(rapor, modul, kurallar, klasor, dry_run):
+    if not rapor:
+        return
+    ozet_adi = cikti_dosya_adi(modul, kurallar, 'ozet')
+    if dry_run:
+        print('  [DRY-RUN] Ozet rapor kaydedilmeyecek: ' + ozet_adi)
+        return
+    with pd.ExcelWriter(os.path.join(klasor, ozet_adi), engine='openpyxl') as writer:
+        rapor_ozet(rapor).to_excel(writer, sheet_name='OZET', index=False)
+        pd.DataFrame(rapor).to_excel(writer, sheet_name='DETAY', index=False)
+    print('  Ozet rapor: ' + ozet_adi)
 
 
 def musteri_hepsi_isle(modul, kurallar, mukerrer_mod, dry_run):
@@ -489,6 +539,7 @@ def musteri_hepsi_isle(modul, kurallar, mukerrer_mod, dry_run):
 
     basarili = 0
     hatali = 0
+    toplu = []
 
     for ad, klasor in klasorler:
         print('')
@@ -517,11 +568,14 @@ def musteri_hepsi_isle(modul, kurallar, mukerrer_mod, dry_run):
 
         for m in islenecek:
             try:
-                modul_isle(m, m_kurallar, mukerrer_mod, dry_run, klasor=klasor)
+                ozet = modul_isle(m, m_kurallar, mukerrer_mod, dry_run, klasor=klasor) or {'modul': m}
                 basarili += 1
             except Exception as e:
                 print('HATA (' + ad + ' / ' + m + '): ' + str(e))
+                ozet = {'modul': m, 'durum': 'HATA: ' + str(e)}
                 hatali += 1
+            if ozet.get('durum') != 'DOSYA YOK':
+                toplu.append(dict(ozet, musteri=ad))
 
     print('')
     print('############################################################')
@@ -529,6 +583,14 @@ def musteri_hepsi_isle(modul, kurallar, mukerrer_mod, dry_run):
     print('# Basarili: ' + str(basarili))
     print('# Hatali  : ' + str(hatali))
     print('############################################################')
+    if toplu and not dry_run:
+        kolonlar = ['musteri', 'modul', 'durum', 'satir', 'uyari', 'duzeltilen', 'gecersiz']
+        adi = 'TOPLU_RAPOR_' + datetime.now().strftime('%Y-%m-%d_%H%M') + '.xlsx'
+        try:
+            pd.DataFrame(toplu).reindex(columns=kolonlar).to_excel(os.path.join(musteri_root, adi), index=False)
+            print('Toplu rapor: ' + os.path.join(musteri_root, adi))
+        except Exception as e:
+            print('UYARI: Toplu rapor yazilamadi: ' + str(e))
 
 
 def arg_parse(argv):

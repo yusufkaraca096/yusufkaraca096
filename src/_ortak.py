@@ -48,16 +48,39 @@ AYAR_TANIMLARI = [
      'aciklama': 'Ilce bilgisinin bulundugu DIA kolonu.',
      'formul': 'kolon adi', 'ornek': 'ilce'},
 ]
+from ek_ayarlar import EK_AYAR_TANIMLARI  # noqa: E402
+AYAR_TANIMLARI = AYAR_TANIMLARI + EK_AYAR_TANIMLARI
 AYAR_VARSAYILAN = {a['ayar']: a['varsayilan'] for a in AYAR_TANIMLARI}
 AYAR_TURU = {a['ayar']: a['tur'] for a in AYAR_TANIMLARI}
+_AYAR_TANIM = {a['ayar']: a for a in AYAR_TANIMLARI}
 _EVET = ('true', '1', '1.0', 'evet', 'e', 'yes', 'x')
 
+# Temizlik sirasinda satirlarin okunan Excel'deki yerini tasiyan gecici kolon (degisiklik raporu icin)
+KAYNAK_SATIR = '_KAYNAK_SATIR'
 
-def ayar(modul, ad):
-    """Modul ayarini dondurur; tanimli degilse varsayilan."""
+
+def ayar_varsayilan(ad, modul_adi=None):
+    tanim = _AYAR_TANIM.get(ad)
+    if not tanim:
+        return None
+    return tanim.get('varsayilan_modul', {}).get(modul_adi, tanim['varsayilan'])
+
+
+def modul_ayar_tanimlari(modul_adi):
+    """Bu modulde gecerli ayarlar; 'varsayilan' modul bazinda cozulmus olarak."""
+    sonuc = []
+    for a in AYAR_TANIMLARI:
+        if a.get('moduller') and modul_adi not in a['moduller']:
+            continue
+        sonuc.append(dict(a, varsayilan=ayar_varsayilan(a['ayar'], modul_adi)))
+    return sonuc
+
+
+def ayar(modul, ad, modul_adi=None):
+    """Modul ayarini dondurur; tanimli degilse (modul bazinda) varsayilan."""
     deger = modul.get(ad)
     if deger is None or (isinstance(deger, str) and deger.strip() == ''):
-        return AYAR_VARSAYILAN.get(ad)
+        return ayar_varsayilan(ad, modul_adi)
     return deger
 
 
@@ -70,7 +93,8 @@ def ayar_cevir(ad, deger):
         return str(deger).strip().lower() in _EVET
     s = sayisal_metin(deger)
     if tur == 'secim':
-        s = s.upper() if s.upper() in ('BUYUK', 'BASLIK') else s
+        secenekler = _AYAR_TANIM.get(ad, {}).get('secenekler', [])
+        s = s.upper() if s.upper() in secenekler else s
     return s if s != '' else AYAR_VARSAYILAN.get(ad)
 
 
@@ -483,12 +507,15 @@ def mukerrer_kontrol_et(df, kurallar_listesi, mod='otomatik'):
         for s in sutunlar[1:]:
             anahtar = anahtar + '|' + df[s].astype(str)
         anahtar_gecerli = anahtar.where(gecerli, '')
-        tekrar = anahtar_gecerli.value_counts()
+        # deger -> satirlar (her satir icin tum kolonu taramak buyuk dosyada cok yavas)
+        gruplar = {}
+        for idx, val in anahtar_gecerli.items():
+            if val:
+                gruplar.setdefault(val, []).append(idx)
         isaretli = 0
         for idx, val in anahtar_gecerli.items():
-            if val and tekrar[val] > 1:
-                ayni = [excel_satir(i)
-                        for i in anahtar_gecerli[anahtar_gecerli == val].index if i != idx]
+            if val and len(gruplar[val]) > 1:
+                ayni = [excel_satir(i) for i in gruplar[val] if i != idx]
                 if not ayni:
                     continue
                 ayni_str = ', '.join(str(x) for x in ayni[:5])
@@ -775,7 +802,7 @@ def bos_satir_temizle(df):
     onceki = len(df)
 
     # Tamamen bos satirlar
-    df = df.dropna(how='all')
+    df = df.dropna(how='all', subset=[c for c in df.columns if c != KAYNAK_SATIR] or None)
 
     # Ilk sutunda ozet ifadesi olan satirlar
     if len(df) > 0 and len(df.columns) > 0:
@@ -1232,7 +1259,8 @@ def toplam_satirlarini_temizle(df):
             return True
         return False
     df = df[~df[ilk_sutun].apply(ozet_satiri)]
-    df = df.dropna(how='all').reset_index(drop=True)
+    df = df.dropna(how='all', subset=[c for c in df.columns if c != KAYNAK_SATIR] or None)
+    df = df.reset_index(drop=True)
     silinen = onceki - len(df)
     if silinen > 0:
         print('  Ozet satirlari silindi: ' + str(silinen))
@@ -1311,7 +1339,7 @@ def kurallari_excele_yaz(kurallar, yol):
         for a in bool_alanlari:
             if a in m:
                 ayarlar.append({'modul': modul, 'ayar': a, 'deger': 'True' if m[a] else 'False'})
-        for a in AYAR_TANIMLARI:
+        for a in modul_ayar_tanimlari(modul):
             deger = m.get(a['ayar'], a['varsayilan'])
             if isinstance(deger, bool):
                 deger = 'True' if deger else 'False'

@@ -543,8 +543,9 @@ class EslemeOgrenPenceresi:
             if not os.path.exists(tam):
                 continue
             try:
-                xl = pd.ExcelFile(tam)
-                for sayfa in xl.sheet_names:
+                with pd.ExcelFile(tam) as xl:
+                    sayfa_adlari = xl.sheet_names
+                for sayfa in sayfa_adlari:
                     df = pd.read_excel(tam, sheet_name=sayfa, nrows=1)
                     for col in df.columns:
                         col_str = str(col).strip()
@@ -623,13 +624,14 @@ class EslemeOgrenPenceresi:
         df = df.drop_duplicates(subset=['modul', 'excel_baslik'], keep='last')
 
         try:
-            xl = pd.ExcelFile(self.kurallar_yolu)
             sayfalar = {}
-            for s in xl.sheet_names:
-                if s == 'ESLESME':
-                    sayfalar[s] = df
-                else:
-                    sayfalar[s] = pd.read_excel(xl, sheet_name=s)
+            # Okuma bitince dosya kapanmali; yoksa Windows'ta ayni dosyaya yazilamaz
+            with pd.ExcelFile(self.kurallar_yolu) as xl:
+                for s in xl.sheet_names:
+                    if s == 'ESLESME':
+                        sayfalar[s] = df
+                    else:
+                        sayfalar[s] = pd.read_excel(xl, sheet_name=s)
             with pd.ExcelWriter(self.kurallar_yolu, engine='openpyxl') as w:
                 for s, d in sayfalar.items():
                     d.to_excel(w, sheet_name=s, index=False)
@@ -1072,10 +1074,11 @@ class AyarlarPenceresi:
 
     def kaydet(self):
         try:
-            xls = pd.ExcelFile(self.kurallar_yolu)
             sayfalar = {}
-            for s in xls.sheet_names:
-                sayfalar[s] = pd.read_excel(xls, sheet_name=s)
+            # Okuma bitince dosya kapanmali; yoksa Windows'ta ayni dosyaya yazilamaz
+            with pd.ExcelFile(self.kurallar_yolu) as xls:
+                for s in xls.sheet_names:
+                    sayfalar[s] = pd.read_excel(xls, sheet_name=s)
 
             modul = self.modul_var.get()
 

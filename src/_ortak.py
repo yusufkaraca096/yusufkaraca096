@@ -936,8 +936,9 @@ def temizlik_uygula(df, modul, temizlik_kurallari, kod_alanlari, sayi_alanlari):
 
 
 def excel_oku_coklu_sayfa(dosya_yolu, sayfa_ayari):
-    xl = pd.ExcelFile(dosya_yolu)
-    tum_sayfalar = xl.sheet_names
+    # Dosya kapatilmazsa Windows'ta kilitli kalir (uzerine yazilamaz)
+    with pd.ExcelFile(dosya_yolu) as xl:
+        tum_sayfalar = xl.sheet_names
 
     if not sayfa_ayari or str(sayfa_ayari).strip() in ('', '0', 'None', 'nan'):
         print('  Sayfa belirtilmemis, ilk sayfa okunuyor: ' +

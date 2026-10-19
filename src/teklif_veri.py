@@ -789,7 +789,7 @@ class TeklifVeri:
         # Liste Excel'inde indirim kolonlari (Kamp. Ind. % / Tutar / Aciklama) varsa okunur
         kamp_kol = {}
         for c in range(1, ws.max_column + 1):
-            k = _KAMP_BASLIK.get(re.sub(r'[\s.:]+', '', _katla(ws.cell(1, c).value)))
+            k = kamp_kolonu(ws.cell(1, c).value)
             if k and k not in kamp_kol:
                 kamp_kol[k] = c
         paketler = {}
@@ -940,7 +940,7 @@ class TeklifVeri:
                      'kullanıcı %': 'kull_yuzde', 'kullanici %': 'kull_yuzde', 'ybh %': 'ybh_yuzde',
                      'açıklama': 'aciklama', 'aciklama': 'aciklama', 'ürünler': 'urunler', 'urunler': 'urunler',
                      'tür': 'tur', 'türü': 'tur', 'tur': 'tur', 'turu': 'tur', 'grup': 'tur', 'zorunlu': 'zorunlu'}
-        yeni, kamp, kamp_kolonu = {}, {}, False
+        yeni, kamp, kamp_var, basliklar_listesi = {}, {}, False, []
         for ws in wb.worksheets:
             satirlar = list(ws.iter_rows(values_only=True))
             for i, satir in enumerate(satirlar[:20]):
@@ -953,10 +953,11 @@ class TeklifVeri:
                     if 'tur' not in eslesme and eslesme['kod'] > 0:
                         eslesme['tur'] = eslesme['kod'] - 1
                     for c, v in enumerate(satir):
-                        k = _KAMP_BASLIK.get(re.sub(r'[\s.:]+', '', _katla(v)))
-                        if k and k not in eslesme:
+                        k = kamp_kolonu(v)
+                        if k and k not in eslesme and c not in eslesme.values():
                             eslesme[k] = c
-                    kamp_kolonu = 'kamp_yuzde' in eslesme or 'kamp_tutar' in eslesme
+                    basliklar_listesi = [_metin(v) for v in satir if _metin(v)]
+                    kamp_var = 'kamp_yuzde' in eslesme or 'kamp_tutar' in eslesme
                     for s in satirlar[i + 1:]:
                         kod = _metin(s[eslesme['kod']]) if eslesme['kod'] < len(s) else ''
                         if not kod:
@@ -967,7 +968,7 @@ class TeklifVeri:
                                      'kull_yuzde': _sayi(al('kull_yuzde')), 'ybh_yuzde': _sayi(al('ybh_yuzde')),
                                      'aciklama': _metin(al('aciklama')), 'urunler': _metin(al('urunler')),
                                      'zorunlu': zorunlu_metni(al('zorunlu'))}
-                        if kamp_kolonu:
+                        if kamp_var:
                             yeni[kod].update(kamp_yuzde=_sayi(al('kamp_yuzde')), kamp_tutar=_sayi(al('kamp_tutar')),
                                              kamp_aciklama=_metin(al('kamp_aciklama')))
                             if yeni[kod]['kamp_yuzde'] or yeni[kod]['kamp_tutar']:
@@ -993,14 +994,14 @@ class TeklifVeri:
                 p['std_saat'] = eski.get(kod, {}).get('std_saat', 0)
                 p['ent_saat'] = eski.get(kod, {}).get('ent_saat', 0)
                 p['aktif'] = 1
-                if not kamp_kolonu:          # listede indirim kolonu yoksa elle girilen indirim korunur
+                if not kamp_var:             # listede indirim kolonu yoksa elle girilen indirim korunur
                     for k in KAMP_KOLONLARI:
                         p[k] = eski.get(kod, {}).get(k)
                 self._paket_yaz(p)
             self.db.execute('INSERT OR REPLACE INTO ayar VALUES (?, ?)',
                             ('fiyat_listesi_tarihi', datetime.now().strftime('%Y-%m-%d')))
         return {'toplam': len(yeni), 'fiyati_degisen': degisen, 'yeni': eklenen, 'listeden_kalkan': kalkan,
-                'kampanyali': sorted(kamp), 'indirim_kolonu': kamp_kolonu}
+                'kampanyali': sorted(kamp), 'indirim_kolonu': kamp_var, 'basliklar': basliklar_listesi}
 
 
 _KAMP_BASLIK = {'kampind%': 'kamp_yuzde', 'kampindirim%': 'kamp_yuzde', 'kampanyaindirim%': 'kamp_yuzde',
@@ -1012,6 +1013,31 @@ _KAMP_BASLIK = {'kampind%': 'kamp_yuzde', 'kampindirim%': 'kamp_yuzde', 'kampany
                 'iskontotutari': 'kamp_tutar',
                 'kampaciklama': 'kamp_aciklama', 'kampanyaaciklama': 'kamp_aciklama', 'kampanyaadi': 'kamp_aciklama',
                 'kampanya': 'kamp_aciklama', 'indirimaciklama': 'kamp_aciklama', 'indirimaciklamasi': 'kamp_aciklama'}
+
+
+def kamp_kolonu(baslik):
+    """Fiyat listesi basligindan indirim kolonu: 'kamp_yuzde' / 'kamp_tutar' / 'kamp_aciklama' / None.
+    Esnek: 'Kamp.Ind.%', 'Indirim %', 'Kampanya Indirim Orani', 'Iskonto Tutari', 'Indirim (TL)', 'Kampanya' ..."""
+    n = re.sub(r'[\s.:()\[\]_\-/]+', '', _katla(baslik))
+    if not n:
+        return None
+    k = _KAMP_BASLIK.get(n)
+    if k:
+        return k
+    if 'kull' in n or 'ybh' in n or 'bakim' in n:
+        return None
+    indirim = any(x in n for x in ('ind', 'iskonto', 'kamp'))
+    if not indirim:
+        return None
+    if any(x in n for x in ('%', 'yuzde', 'oran')):
+        return 'kamp_yuzde'
+    if any(x in n for x in ('tutar', 'tl', 'bedel', 'fiyat', 'miktar')):
+        return 'kamp_tutar'
+    if 'acikl' not in n and 'adi' not in n and ('indirim' in n or 'iskonto' in n or n.endswith('ind')):
+        return 'kamp_tutar'          # 'Indirim', 'Kampanya Indirimi', 'Iskonto'
+    if any(x in n for x in ('acikl', 'adi', 'not', 'kampanya')) or n == 'kamp':
+        return 'kamp_aciklama'
+    return None
 
 
 def _katla(x):

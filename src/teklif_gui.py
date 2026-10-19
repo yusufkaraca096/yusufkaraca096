@@ -1980,8 +1980,10 @@ class VeriPenceresi:
                                 r['toplam'], len(r['fiyati_degisen']), ornek(r['fiyati_degisen']), len(r['yeni']),
                                 ornek(r['yeni']), len(r['listeden_kalkan']), ornek(r['listeden_kalkan']),
                                 ('İndirimli paket: %d%s' % (len(r['kampanyali']), ornek(r['kampanyali'])))
-                                if r.get('indirim_kolonu') else 'Listede indirim kolonu yok: paket indirimleri '
-                                'değiştirilmedi.'), parent=self.p)
+                                if r.get('indirim_kolonu') else 'Listede indirim kolonu BULUNAMADI; paket indirimleri '
+                                'değiştirilmedi.\nDosyadaki başlıklar: %s\nİndirim kolonunun başlığında "İndirim", '
+                                '"İskonto" veya "Kamp" ve "%%" / "Tutar" geçmeli (ör. "İndirim %%", "İndirim Tutarı", '
+                                '"Kampanya").' % ', '.join(r.get('basliklar', [])[:20])), parent=self.p)
 
     def yedek_al(self):
         yol = self.ana.veri.yedek_al('elle')

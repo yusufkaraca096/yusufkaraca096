@@ -609,6 +609,15 @@ class DiaListeIceAktarmaTest(unittest.TestCase):
         self.v.excelden_ice_aktar(yol)                  # motor ice aktarimi da sayfa adini bulur, indirimi korur
         self.assertEqual(self.v.paketler()['DIG1']['kamp_tutar'], 50)
 
+    def test_indirim_basliklari_esnek(self):
+        from teklif_veri import kamp_kolonu
+        for baslik, beklenen in [('Kamp.İnd.%', 'kamp_yuzde'), ('İNDİRİM %', 'kamp_yuzde'), ('İskonto Oranı', 'kamp_yuzde'),
+                                 ('Kamp.İnd.Tutar', 'kamp_tutar'), ('İndirim', 'kamp_tutar'),
+                                 ('Kampanya İndirimi', 'kamp_tutar'), ('İndirim (TL)', 'kamp_tutar'),
+                                 ('Kamp.Açıklama', 'kamp_aciklama'), ('Kampanya', 'kamp_aciklama'),
+                                 (' Kullanıcı %', None), ('     YBH %', None), ('Açıklama', None), (' Std. Fiyat', None)]:
+            self.assertEqual(kamp_kolonu(baslik), beklenen, baslik)
+
     def test_eski_kampanya_tablosu_pakete_tasinir(self):
         with self.v.db:
             self.v.db.execute("INSERT INTO paket_kampanya (ad, kodlar, yuzde, tutar, aktif) VALUES "

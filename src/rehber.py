@@ -469,6 +469,41 @@ def bolumler():
             'Revizyon Kaydet: RT-2026-0001 → RT-2026-0001-R1; PDF başlığında "Revizyon 1" yazar, kayıtta önceki '
             'sürümle genel toplam farkı gösterilir.',
         ]),
+        ('h', 'DİA paket kampanyaları ve DİA ekranıyla karşılaştırma'),
+        ('madde', [
+            'DİA\'nın paket bazlı kampanyaları (ör. "Ekim 2026 E-Fatura" 7.800 TL) Veriler > DİA Paket Kampanyaları\'na '
+            'girilir: paket kodları (virgülle, * joker: M550_*), İnd. % veya İnd. Tutar, başlangıç-bitiş tarihi.',
+            'DİA fiyat listesi Excel\'inde "Kamp.İnd.%", "Kamp.İnd.Tutar", "Kamp.Açıklama" kolonları varsa '
+            '"DIA Fiyat Listesini Güncelle" bunları kendiliğinden kampanya olarak alır.',
+            'Teklifte kampanya satırın "DİA Kamp. İnd." kolonunda görünür ve liste tutarından düşer; elle İnd. % / '
+            'İnd. Tutar kampanyalı tutar üzerinden uygulanır. Kolona çift tıklayınca o satırda kampanya kapanır/açılır. '
+            'DİA kampanyası sizin "toplam indirim" sınırınıza sayılmaz.',
+            'Ekranın altındaki mavi satır DİA üye ekranıyla aynı rakamları verir: Üyelik Giriş Tutarı (lisans net), '
+            'Ek +1 Masaüstü / Mobil (birim × Kull. %), Yıllık Bulut Hizmet Bedeli (liste × YBH %). Örnek: Perakende '
+            'Pro + Genel Muhasebe + POS 1 + POS 1+14 + E-Fatura (−7.800) → 297.900 / 17.100 / 99.300.',
+            'Tutar yazarken 7.800, 7 800, 7.800,00 veya ₺7.800 yazabilirsiniz; hepsi 7800 olarak okunur '
+            '(eskiden 7.800 → 7,8 okunuyordu).',
+            'Adam/saati olmayan bir Excel içe aktarılırsa önceki adam/saatler korunur; A/S\'si 0 olan paket teklife '
+            'eklenirse Kontroller\'de uyarı çıkar (kurulum saati eksik hesaplanmasın).',
+        ]),
+        ('h', 'PDF / Excel tasarımı (Tasarım düğmesi)'),
+        ('madde', [
+            'Üç hazır tasarım: Kurumsal (logo solda, firma bilgileri sağda), Modern (renkli bant başlık), Sade '
+            '(siyah-beyaz, yazıcı dostu). Kopyalayıp kendi tasarımınızı oluşturabilirsiniz.',
+            'Görünüm: şablon, ana ve vurgu rengi, yazı boyutu, teklif başlığı, logo (PNG/JPG).',
+            'Gösterilecek Alanlar: ön yazı, Teklifi Veren / Teklif Edilen kutuları, hazırlayan, paket kodları, paket '
+            'içeriği, liste fiyatı / indirim kolonları, ek kullanıcı ve yıllık bulut bedeli, uyarlama dayanağı ve '
+            'hesabı, ödeme seçenekleri, bakım, toplam maliyet, ticari şartlar, banka, notlar, imza, alt bilgi.',
+            'Metinler: ön yazı, ticari şartlar (her satır bir madde), kapanış. {musteri} {yetkili} {tarih} '
+            '{gecerlilik} {teklif_no} {firma} {hazirlayan} alanları otomatik doldurulur.',
+            'Firma ve Hazırlayan: adres, telefon, e-posta, web, vergi no, banka/IBAN, teklifi hazırlayan kişi. '
+            'Bunlar tüm tasarımlarda ortaktır.',
+            'Önizle ile PDF/Excel\'i hemen görün; "Kaydet ve Varsayılan Yap" ile tasarım sabitlenir, yeni teklifler '
+            'bu tasarımla açılır. Teklif ekranındaki "PDF tasarımı" kutusundan teklife özel başka tasarım seçilebilir '
+            've teklifle birlikte kaydedilir.',
+            'PDF\'te alt bilgi: firma iletişim bilgileri ve "Sayfa x / y". Excel\'de logo, renkler ve yazdırma alt '
+            'bilgisi de uygulanır.',
+        ]),
         ('h', 'Excel\'de düzeltilen hatalar'),
         ('madde', [
             'K24 hücresindeki bozuk formül (#NAME?) lisans neti, ara toplam, net toplam ve ödeme planını bozuyordu.',

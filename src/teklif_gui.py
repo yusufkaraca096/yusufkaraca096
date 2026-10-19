@@ -7,10 +7,11 @@ import re
 import subprocess
 import sys
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 
 import teklif_cikti
-from teklif_hesap import hesapla, ybh_hesapla, kod_listesi_coz
+import teklif_tasarim
+from teklif_hesap import hesapla, ybh_hesapla, kod_listesi_coz, sayi_coz
 from teklif_veri import TeklifVeri, AYARLAR, varsayilan_klasor, veri_klasoru_degistir
 
 LACIVERT = '#2c3e50'
@@ -22,16 +23,8 @@ def katla(s):
 
 
 def sayi_oku(metin, bos=None):
-    """'1.250,50' / '1250.5' / '%15' -> float; bos -> bos"""
-    s = str(metin).strip().replace('%', '').replace('TL', '').replace(' ', '')
-    if not s:
-        return bos
-    if ',' in s:
-        s = s.replace('.', '').replace(',', '.')
-    try:
-        return float(s)
-    except ValueError:
-        return bos
+    """'1.250,50' / '7.800' / '1250.5' / '%15' -> float; bos -> bos"""
+    return sayi_coz(metin, bos)
 
 
 def para(x):
@@ -64,7 +57,7 @@ SEVIYE_RENK = {'KRİTİK': '#c0392b', 'UYARI': '#d35400', 'ÖNERİ': '#2471a3', 
 class TeklifPenceresi:
     KOLONLAR = [('kod', 'Paket Kodu', 150), ('ad', 'Paket Adı', 230), ('tur', 'Tür', 80), ('adet', 'Adet ✎', 60),
                 ('birim', 'Birim Fiyat', 95), ('kull', 'Kull. %', 55), ('toplam', 'Toplam', 105),
-                ('ind_yuzde', 'İnd. % ✎', 65), ('ind_tutar', 'İnd. Tutar ✎', 90), ('net', 'Net (KDV Hr.)', 110),
+                ('kamp', 'DİA Kamp. İnd.', 100), ('ind_yuzde', 'İnd. % ✎', 65), ('ind_tutar', 'İnd. Tutar ✎', 90), ('net', 'Net (KDV Hr.)', 110),
                 ('dahil', 'KDV Dahil', 110), ('saat', 'A/S ✎', 55)]
     DUZENLENIR = {'adet': 'adet', 'ind_yuzde': 'ind_yuzde', 'ind_tutar': 'ind_tutar', 'saat': 'saat'}
 
@@ -115,6 +108,7 @@ class TeklifPenceresi:
         self.no_lbl = tk.Label(ust, text='', font=('Arial', 11, 'bold'), bg=LACIVERT, fg='#f1c40f')
         self.no_lbl.pack(side=tk.LEFT, padx=10)
         for metin, komut, renk in [('⚙ Veriler', self.veriler_ac, '#7f8c8d'),
+                                   ('🎨 Tasarım', self.tasarim_ac, '#b9770e'),
                                    ('🔧 YBH', self.ybh_ac, '#8e44ad'),
                                    ('📂 Geçmiş', self.gecmis_ac, '#16a085'),
                                    ('📊 Excel', self.excel_kaydet, '#27ae60'), ('📄 PDF', self.pdf_kaydet, '#c0392b'),
@@ -130,6 +124,7 @@ class TeklifPenceresi:
         self.mobil = tk.StringVar(value='0')
         self.tip_secim = tk.StringVar(value='OTOMATİK')
         self.etiket = tk.StringVar(value='')
+        self.tasarim_var = tk.StringVar(value='')
         self.mb = {k: tk.StringVar() for k in ('yetkili', 'telefon', 'eposta', 'vkn', 'vergi_dairesi')}
 
         # Iki satir ayri cercevede: ayni grid kolonlarini paylasip pencereden tasmasinlar
@@ -151,6 +146,8 @@ class TeklifPenceresi:
         self.tip_lbl.pack(side=tk.LEFT, padx=4)
         etiketli(0, 'Etiket:', ttk.Combobox(f0, textvariable=self.etiket, width=10,
                                             values=['', 'Ekonomik', 'Önerilen', 'Kapsamlı']))
+        self.tasarim_cb = ttk.Combobox(f0, textvariable=self.tasarim_var, width=14, state='readonly')
+        etiketli(0, 'PDF tasarımı:', self.tasarim_cb)
         etiketli(1, 'Yetkili:', tk.Entry(f1, textvariable=self.mb['yetkili'], width=30))
         etiketli(1, 'Telefon:', tk.Entry(f1, textvariable=self.mb['telefon'], width=16))
         etiketli(1, 'E-posta:', tk.Entry(f1, textvariable=self.mb['eposta'], width=26))
@@ -434,6 +431,9 @@ class TeklifPenceresi:
                                      padx=10, cursor='hand2')
         self.uyarlama_lbl.pack(fill=tk.X, pady=(3, 0))
         self.uyarlama_lbl.bind('<Button-1>', lambda e: self.nb.select(self.sekme_kesif))
+        self.dia_lbl = tk.Label(sag, text='', bg='#eaf2f8', fg='#1b4f72', font=('Arial', 9, 'bold'), justify='left',
+                                anchor='w', padx=6, pady=2)
+        self.dia_lbl.pack(fill=tk.X, pady=(3, 0))
         self.uyarlama_detay = tk.Label(sag, text='', bg='#f0f0f0', fg='#555', font=('Arial', 8), justify='left',
                                        wraplength=520)
         self.uyarlama_detay.pack(anchor='w')
@@ -458,6 +458,7 @@ class TeklifPenceresi:
             tk.Label(self.sabit_cerceve, text='(tanımlı değil: Veriler > Sabit Kalemler)', bg='#f0f0f0',
                      fg='#888').pack(anchor='w')
         self.kampanya_cb['values'] = [k['ad'] for k in self.kampanya_listesi]
+        self.tasarim_cb['values'] = list(self.veri.tasarimlar())
         self.bakim_cb['values'] = ['Ekleme'] + [b['ad'] for b in self.kurallar['bakim']]
         self._kesif_formu_kur()
         self.durum_lbl.config(text='Veri: %s   |   %d paket   |   Son yedek: %s' % (
@@ -505,6 +506,7 @@ class TeklifPenceresi:
                 'maliyet': sayi_oku(self.maliyet.get(), 0), 'notlar': self.notlar.get('1.0', 'end').strip(),
                 'odeme_secimi': list(self.odeme_secimi) if self.odeme_secimi is not None else None,
                 'bakim': '' if bakim == 'Ekleme' else bakim, 'bakim_sun': self.bakim_sun.get(),
+                'tasarim': self.tasarim_var.get(),
                 'revizyon_onceki': self.revizyon_onceki}
 
     def hesapla(self):
@@ -540,6 +542,11 @@ class TeklifPenceresi:
             self.ayar['lisans_yuzdesi'], para(u['lisans_payi']), u['saat'], para(u['saat_ucreti']),
             para(u['saat_bedeli']), ('   → ' + u['sinir'] + ' uygulandı') if u['sinir'] else ''))
         self.genel_lbl.config(text='GENEL TOPLAM (KDV Dahil):  %s TL' % para(s['genel_toplam']))
+        d = s['dia']
+        self.dia_lbl.config(text='DİA ekranıyla karşılaştırın →  Üyelik Giriş: %s   Ek +1 Masaüstü: %s   Ek +1 Mobil: %s'
+                                 '   Yıllık Bulut: %s%s' % (
+            para(d['uyelik_giris']), para(d['ek_masaustu']), para(d['ek_mobil']), para(d['yillik_bulut']),
+            ('   (DİA kampanyası −%s)' % para(d['kampanya_indirimi'])) if d['kampanya_indirimi'] else ''))
         k = s['kar']
         self.kar_lbl.config(text=('Kâr: %s TL (marj %%%g)' % (para(k['brut']), k['marj'])) if k['maliyet'] else
                             'Kâr: maliyet girilmedi', fg='#1e8449' if k['maliyet'] and k['brut'] > 0 else '#555')
@@ -567,12 +574,14 @@ class TeklifPenceresi:
                 any(k.get(a) for a in ('ind_yuzde', 'ind_tutar'))     # elle 0 saat de elle sayilir
             self.tree.insert('', 'end', iid=str(i), tags=('elle',) if elle else (), values=(
                 x['kod'], x['ad'], x['tur'], x['adet'], para(x['birim']), '%g' % x['kull_yuzde'], para(x['toplam']),
+                '(kapalı)' if k.get('kamp_kapali') else para(x['kamp_indirim']) if x['kamp_indirim'] else '',
                 '%g' % x['ind_yuzde'] if x['ind_yuzde'] else '', para(x['ind_tutar']) if x['ind_tutar'] else '',
                 para(x['net']), para(x['dahil']), '%g' % x['saat']))
         li = s['lisans']
         self.tree.insert('', 'end', iid='toplam', tags=('toplam',), values=(
-            'TOPLAM', '%d kalem' % len(s['satirlar']), '', '', '', '', para(li['toplam']), '',
-            para(li['indirim']) if li['indirim'] else '', para(li['net']), para(li['dahil']),
+            'TOPLAM', '%d kalem' % len(s['satirlar']), '', '', '', '', para(li['toplam']),
+            para(li['kamp_indirim']) if li['kamp_indirim'] else '', '',
+            para(li['indirim'] - li['kamp_indirim']) if li['indirim'] - li['kamp_indirim'] else '', para(li['net']), para(li['dahil']),
             '%g' % sum(x['saat'] for x in s['satirlar'])))
         for iid in secili:
             if self.tree.exists(iid):
@@ -618,6 +627,9 @@ class TeklifPenceresi:
         giris.focus_set()
 
         def bitir(_e=None, kaydet=True):
+            if not giris.winfo_exists() or getattr(giris, '_bitti', False):
+                return
+            giris._bitti = True
             if kaydet:
                 deger = sayi_oku(giris.get(), None)
                 if deger is None:
@@ -797,7 +809,10 @@ class TeklifPenceresi:
         if sec:
             p = self.paketler.get(self.kalemler[int(sec[0])]['kod'], {})
             zorunlu = (' | Gerekli modüller: ' + p['zorunlu']) if p.get('zorunlu') else ''
-            self.aciklama_lbl.config(text=((p.get('aciklama') or '').replace('\n', ' ')[:400] + zorunlu))
+            x = next((x for x in (self.sonuc or {}).get('satirlar', []) if x['sira'] == int(sec[0])), {})
+            kamp = (' | DİA kampanyası: %s (−%s TL; kapatmak için kolona çift tıklayın)' % (
+                x['kamp_ad'], para(x['kamp_indirim']))) if x.get('kamp_indirim') else ''
+            self.aciklama_lbl.config(text=((p.get('aciklama') or '').replace('\n', ' ')[:400] + zorunlu + kamp))
 
     def hucre_duzenle(self, olay):
         iid = self.tree.identify_row(olay.y)
@@ -805,6 +820,11 @@ class TeklifPenceresi:
         if not iid or iid == 'toplam':
             return
         ad = self.KOLONLAR[int(kolon[1:]) - 1][0]
+        if ad == 'kamp':        # DIA kampanyasini bu satirda ac / kapat
+            kalem = self.kalemler[int(iid)]
+            kalem['kamp_kapali'] = not kalem.get('kamp_kapali')
+            self.hesapla()
+            return
         if ad not in self.DUZENLENIR:
             return
         x, y, w, h = self.tree.bbox(iid, kolon)
@@ -818,6 +838,9 @@ class TeklifPenceresi:
         giris.select_range(0, 'end')
 
         def bitir(_e=None, kaydet=True):
+            if not giris.winfo_exists() or getattr(giris, '_bitti', False):
+                return
+            giris._bitti = True
             if kaydet:
                 deger = sayi_oku(giris.get(), None)
                 if alan in ('ind_yuzde', 'ind_tutar'):
@@ -870,6 +893,9 @@ class TeklifPenceresi:
         for k, v in self.mb.items():
             v.set(mb.get(k, ''))
         self.etiket.set(girdi.get('etiket', ''))
+        tasarimlar = self.veri.tasarimlar()
+        self.tasarim_var.set(girdi.get('tasarim') if girdi.get('tasarim') in tasarimlar else
+                             self.veri.varsayilan_tasarim_adi())
         self.masaustu.set(str(girdi.get('masaustu', 1 if yeni else 0)))
         self.mobil.set(str(girdi.get('mobil', 0)))
         tip = girdi.get('paket_tipi', 'OTOMATIK')
@@ -969,7 +995,7 @@ class TeklifPenceresi:
         if not yol:
             return
         try:
-            teklif_cikti.pdf_olustur(yol, self.girdi(), self.sonuc, self.ayar)
+            teklif_cikti.pdf_olustur(yol, self.girdi(), self.sonuc, self.ayar, self.secili_tasarim())
         except ImportError:
             messagebox.showerror('PDF', "PDF için 'reportlab' kurulu değil.", parent=self.pencere)
             return
@@ -983,7 +1009,7 @@ class TeklifPenceresi:
         if not yol:
             return
         try:
-            teklif_cikti.excel_olustur(yol, self.girdi(), self.sonuc, self.ayar)
+            teklif_cikti.excel_olustur(yol, self.girdi(), self.sonuc, self.ayar, self.secili_tasarim())
         except Exception as e:
             messagebox.showerror('Excel oluşturulamadı', str(e), parent=self.pencere)
             return
@@ -999,6 +1025,12 @@ class TeklifPenceresi:
 
     def veriler_ac(self):
         VeriPenceresi(self)
+
+    def tasarim_ac(self):
+        TasarimPenceresi(self)
+
+    def secili_tasarim(self):
+        return self.veri.tasarim(self.tasarim_var.get())
 
     def ybh_ac(self):
         if not self.paketler:
@@ -1219,7 +1251,7 @@ class GecmisPenceresi:
                                            initialfile='Secenekler_%s.pdf' % re.sub(r'[^\w\- ]', '',
                                                                                      teklifler[0][0].get('musteri', ''))[:40])
         if yol:
-            teklif_cikti.karsilastirma_pdf(yol, teklifler, self.ana.ayar)
+            teklif_cikti.karsilastirma_pdf(yol, teklifler, self.ana.ayar, self.ana.secili_tasarim())
             dosya_ac(yol)
 
     def gerceklesen(self):
@@ -1310,6 +1342,11 @@ class VeriPenceresi:
         ('kampanya', '  Kampanyalar  ', [('ad', 'Kampanya', 180, True), ('yuzde', 'İndirim %', 80, True),
                                          ('durum', 'Durum (AKTİF/PASİF)', 130, True), ('aciklama', 'Açıklama', 300, True),
                                          ('kosul', 'Koşul (satış asistanı)', 300, True)]),
+        ('paket_kampanya', '  DİA Paket Kampanyaları  ', [
+            ('ad', 'Kampanya adı', 220, True), ('kodlar', 'Paket kodları (virgülle; * joker: M550_*)', 280, True),
+            ('yuzde', 'İnd. %', 70, True), ('tutar', 'İnd. Tutar', 90, True),
+            ('baslangic', 'Başlangıç (YYYY-AA-GG)', 140, True), ('bitis', 'Bitiş (YYYY-AA-GG)', 130, True),
+            ('aktif', 'Aktif', 50, True), ('kaynak', 'Kaynak', 90, False)]),
         ('rakip', '  Rakipler  ', [('firma', 'Firma', 200, True), ('saat', 'Adam/Saat', 100, True),
                                    ('ucret', 'Saatlik Ücret', 130, True)]),
         ('paket', '  Paketler / Adam-Saat  ', [
@@ -1341,7 +1378,7 @@ class VeriPenceresi:
     ]
     SAYI = {'fiyat', 'yuzde', 'saat', 'ucret', 'std_fiyat', 'ent_fiyat', 'kull_yuzde', 'ybh_yuzde', 'std_saat',
             'ent_saat', 'aktif', 'p1', 'p2', 'carpan', 'sira', 'esik', 'taksit', 'indirim', 'vade_farki', 'aylik_vade',
-            'komisyon', 'musteriye_goster', 'saat_carpani', 'yerinde_gun'}
+            'komisyon', 'musteriye_goster', 'saat_carpani', 'yerinde_gun', 'tutar'}
 
     def __init__(self, ana):
         self.ana = ana
@@ -1571,6 +1608,260 @@ class VeriPenceresi:
 
 # ======================================================================
 # Yillik bakim
+# ======================================================================
+# PDF / Excel tasarimi
+# ======================================================================
+class TasarimPenceresi:
+    """Teklif tasarimlari: sablon, renk, logo, gosterilecek alanlar, metinler, firma / hazirlayan bilgileri.
+    'Kaydet ve Varsayılan Yap' ile tasarim sabitlenir; yeni teklifler bu tasarimla acilir."""
+    FIRMA_ALANLARI = [('firma_adi', 'Firma adı'), ('firma_adres', 'Adres'), ('firma_telefon', 'Telefon'),
+                      ('firma_eposta', 'E-posta'), ('firma_web', 'Web'), ('firma_vergi', 'Vergi dairesi / no'),
+                      ('firma_banka', 'Banka / IBAN'), ('hazirlayan_ad', 'Hazırlayan'),
+                      ('hazirlayan_unvan', 'Unvan'), ('hazirlayan_telefon', 'Hazırlayan tel.'),
+                      ('hazirlayan_eposta', 'Hazırlayan e-posta')]
+
+    def __init__(self, ana):
+        self.ana = ana
+        self.p = tk.Toplevel(ana.pencere)
+        self.p.title('Teklif Tasarımı (PDF / Excel)')
+        self.p.geometry('1180x760')
+        self.p.transient(ana.pencere)
+        ust = tk.Frame(self.p, bg=LACIVERT, pady=6)
+        ust.pack(fill=tk.X)
+        tk.Label(ust, text='🎨 TEKLİF TASARIMI', font=('Arial', 13, 'bold'), bg=LACIVERT, fg='white').pack(
+            side=tk.LEFT, padx=10)
+        tk.Label(ust, text='Şablon seçin, alanları açıp kapatın, metinleri yazın → Önizle → Kaydet. '
+                           '"Varsayılan Yap" ile sabitlenir.', bg=LACIVERT, fg='#f1c40f').pack(side=tk.LEFT)
+
+        sol = tk.Frame(self.p, padx=6, pady=6)
+        sol.pack(side=tk.LEFT, fill=tk.Y)
+        tk.Label(sol, text='Kayıtlı tasarımlar (★ varsayılan)', font=('Arial', 9, 'bold')).pack(anchor='w')
+        self.liste = tk.Listbox(sol, width=26, height=18, font=('Arial', 10), exportselection=False)
+        self.liste.pack(fill=tk.Y, expand=True)
+        self.liste.bind('<<ListboxSelect>>', lambda e: self._sec())
+        for metin, komut, renk in [('＋ Yeni (kopya)', self.yeni, '#27ae60'), ('🗑 Sil', self.sil, '#e74c3c'),
+                                   ('📌 Varsayılan Yap', self.varsayilan_yap, '#8e44ad')]:
+            _dugme(sol, metin, komut, renk).pack(fill=tk.X, pady=2)
+
+        sag = tk.Frame(self.p, padx=6, pady=6)
+        sag.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        nb = ttk.Notebook(sag)
+        nb.pack(fill=tk.BOTH, expand=True)
+        f1, f2, f3, f4 = (tk.Frame(nb, padx=10, pady=8) for _ in range(4))
+        nb.add(f1, text='  Görünüm  ')
+        nb.add(f2, text='  Gösterilecek Alanlar  ')
+        nb.add(f3, text='  Metinler  ')
+        nb.add(f4, text='  Firma ve Hazırlayan  ')
+
+        # Gorunum
+        self.v = {k: tk.StringVar() for k in ('ad', 'sablon', 'ana_renk', 'vurgu_renk', 'yazi_boyutu', 'baslik')}
+        self.logo = tk.StringVar(value=ana.ayar.get('logo_yolu', ''))
+        satir = 0
+
+        def alan(etiket, w):
+            nonlocal satir
+            tk.Label(f1, text=etiket).grid(row=satir, column=0, sticky='w', pady=4)
+            w.grid(row=satir, column=1, sticky='w', pady=4)
+            satir += 1
+        alan('Tasarım adı:', tk.Entry(f1, textvariable=self.v['ad'], width=30))
+        alan('Şablon:', ttk.Combobox(f1, textvariable=self.v['sablon'], values=teklif_tasarim.SABLONLAR,
+                                     state='readonly', width=14))
+        for k, etiket in (('ana_renk', 'Ana renk:'), ('vurgu_renk', 'Vurgu rengi:')):
+            fr = tk.Frame(f1)
+            tk.Entry(fr, textvariable=self.v[k], width=10).pack(side=tk.LEFT)
+            ornek = tk.Label(fr, text='      ', relief='solid', bd=1)
+            ornek.pack(side=tk.LEFT, padx=4)
+            _dugme(fr, 'Seç…', lambda k=k: self._renk_sec(k), '#7f8c8d').pack(side=tk.LEFT)
+            self.v[k].trace_add('write', lambda *a, o=ornek, k=k: self._renk_goster(o, k))
+            alan(etiket, fr)
+        alan('Yazı boyutu:', tk.Spinbox(f1, from_=7, to=12, increment=0.5, textvariable=self.v['yazi_boyutu'],
+                                        width=6))
+        alan('Teklif başlığı:', tk.Entry(f1, textvariable=self.v['baslik'], width=50))
+        fr = tk.Frame(f1)
+        tk.Entry(fr, textvariable=self.logo, width=50).pack(side=tk.LEFT)
+        _dugme(fr, 'Seç…', self._logo_sec, '#7f8c8d').pack(side=tk.LEFT, padx=3)
+        _dugme(fr, 'Kaldır', lambda: self.logo.set(''), '#95a5a6').pack(side=tk.LEFT)
+        alan('Logo (tüm tasarımlar):', fr)
+        tk.Label(f1, text='Kurumsal: logo solda, firma bilgileri sağda, ince çizgiler.\n'
+                          'Modern: renkli bant başlık, vurgulu bölüm başlıkları.\n'
+                          'Sade: siyah-beyaz, az renk, yazıcı dostu.', fg='#555', justify='left').grid(
+            row=satir, column=0, columnspan=2, sticky='w', pady=10)
+
+        # Alanlar
+        self.goster = {}
+        for i, (k, etiket, _) in enumerate(teklif_tasarim.ALANLAR):
+            v = tk.BooleanVar()
+            tk.Checkbutton(f2, text=etiket, variable=v).grid(row=i % 12, column=i // 12, sticky='w', padx=8, pady=1)
+            self.goster[k] = v
+
+        # Metinler
+        self.metin = {}
+        for i, (k, etiket, yuk) in enumerate([('on_yazi', 'Ön yazı', 5), ('sartlar', 'Ticari şartlar (her satır '
+                                                                                    'bir madde)', 6),
+                                              ('kapanis', 'Kapanış', 2)]):
+            tk.Label(f3, text=etiket + ':', font=('Arial', 9, 'bold')).pack(anchor='w', pady=(6 if i else 0, 0))
+            w = tk.Text(f3, height=yuk, width=110, font=('Arial', 10), wrap='word')
+            w.pack(fill=tk.X)
+            self.metin[k] = w
+        tk.Label(f3, text='Kullanılabilen alanlar: {musteri} {yetkili} {tarih} {gecerlilik} {teklif_no} {firma} '
+                          '{hazirlayan}', fg='#555').pack(anchor='w', pady=6)
+
+        # Firma
+        self.firma = {}
+        for i, (k, etiket) in enumerate(self.FIRMA_ALANLARI):
+            tk.Label(f4, text=etiket + ':').grid(row=i, column=0, sticky='w', pady=3)
+            v = tk.StringVar(value=str(ana.ayar.get(k, '') or '').replace('\n', ' | '))
+            tk.Entry(f4, textvariable=v, width=80).grid(row=i, column=1, sticky='w', pady=3)
+            self.firma[k] = v
+        tk.Label(f4, text='Bu bilgiler tüm tasarımlarda ortaktır (Ayarlar\'a kaydedilir). Banka satırlarını '
+                          '" | " ile ayırabilirsiniz.', fg='#555').grid(row=len(self.FIRMA_ALANLARI), column=0,
+                                                                      columnspan=2, sticky='w', pady=8)
+
+        alt = tk.Frame(sag)
+        alt.pack(fill=tk.X, pady=6)
+        for metin, komut, renk in [('👁 Önizle (PDF)', lambda: self.onizle('.pdf'), '#c0392b'),
+                                   ('👁 Önizle (Excel)', lambda: self.onizle('.xlsx'), '#27ae60'),
+                                   ('💾 Kaydet', self.kaydet, '#2980b9'),
+                                   ('📌 Kaydet ve Varsayılan Yap', lambda: self.kaydet(varsayilan=True), '#8e44ad')]:
+            _dugme(alt, metin, komut, renk).pack(side=tk.LEFT, padx=3)
+        self.durum = tk.Label(alt, text='', fg='#1e8449')
+        self.durum.pack(side=tk.LEFT, padx=8)
+        self.secili = None
+        self._liste_doldur(ana.tasarim_var.get() or ana.veri.varsayilan_tasarim_adi())
+
+    # ------------------------------------------------------------
+    def _renk_goster(self, ornek, k):
+        r = self.v[k].get()
+        if re.fullmatch(r'#[0-9a-fA-F]{6}', r):
+            ornek.config(bg=r)
+
+    def _renk_sec(self, k):
+        from tkinter import colorchooser
+        r = colorchooser.askcolor(color=self.v[k].get() or None, parent=self.p)[1]
+        if r:
+            self.v[k].set(r.upper())
+
+    def _logo_sec(self):
+        yol = filedialog.askopenfilename(parent=self.p, title='Logo seçin',
+                                         filetypes=[('Resim', '*.png *.jpg *.jpeg'), ('Tümü', '*.*')])
+        if yol:
+            self.logo.set(yol)
+
+    def _liste_doldur(self, sec=None):
+        self.tumu = self.ana.veri.tasarimlar()
+        vars_ = self.ana.veri.varsayilan_tasarim_adi()
+        self.adlar = list(self.tumu)
+        self.liste.delete(0, 'end')
+        for ad in self.adlar:
+            self.liste.insert('end', ('★ ' if ad == vars_ else '   ') + ad)
+        i = self.adlar.index(sec) if sec in self.adlar else 0
+        self.liste.selection_clear(0, 'end')
+        self.liste.selection_set(i)
+        self._sec()
+
+    def _sec(self):
+        sec = self.liste.curselection()
+        if not sec:
+            return
+        self.secili = self.adlar[sec[0]]
+        self._forma_yaz(self.secili, self.tumu[self.secili])
+
+    def _forma_yaz(self, ad, t):
+        self.v['ad'].set(ad)
+        for k in ('sablon', 'ana_renk', 'vurgu_renk', 'baslik'):
+            self.v[k].set(t[k])
+        self.v['yazi_boyutu'].set('%g' % t['yazi_boyutu'])
+        for k, v in self.goster.items():
+            v.set(bool(t['goster'].get(k)))
+        for k, w in self.metin.items():
+            w.delete('1.0', 'end')
+            w.insert('1.0', t.get(k) or '')
+
+    def formdan(self):
+        return teklif_tasarim.tamamla({
+            'sablon': self.v['sablon'].get(), 'ana_renk': self.v['ana_renk'].get().strip(),
+            'vurgu_renk': self.v['vurgu_renk'].get().strip(), 'baslik': self.v['baslik'].get().strip(),
+            'yazi_boyutu': sayi_oku(self.v['yazi_boyutu'].get(), 9),
+            'goster': {k: v.get() for k, v in self.goster.items()},
+            **{k: w.get('1.0', 'end').strip() for k, w in self.metin.items()}})
+
+    def _firma_kaydet(self):
+        for k, v in self.firma.items():
+            deger = v.get().strip()
+            if k == 'firma_banka':
+                deger = deger.replace(' | ', '\n')
+            if str(self.ana.ayar.get(k, '') or '') != deger:
+                self.ana.veri.ayar_yaz(k, deger)
+        if (self.ana.ayar.get('logo_yolu') or '') != self.logo.get().strip():
+            self.ana.veri.ayar_yaz('logo_yolu', self.logo.get().strip())
+        self.ana.ayar = self.ana.veri.ayarlar()
+
+    def kaydet(self, varsayilan=False):
+        ad = self.v['ad'].get().strip()
+        if not ad:
+            messagebox.showwarning('Tasarım', 'Tasarım adı boş olamaz.', parent=self.p)
+            return
+        self._firma_kaydet()
+        if self.secili and ad != self.secili and self.secili in self.tumu and messagebox.askyesno(
+                'Tasarım', '"%s" adı "%s" olarak değiştirilsin mi?\n(Hayır: yeni tasarım olarak kaydedilir)' % (
+                    self.secili, ad), parent=self.p):
+            eski_vars = self.ana.veri.varsayilan_tasarim_adi() == self.secili
+            self.ana.veri.tasarim_sil(self.secili)
+            varsayilan = varsayilan or eski_vars
+        self.ana.veri.tasarim_kaydet(ad, self.formdan(), varsayilan=varsayilan)
+        self._liste_doldur(ad)
+        self.ana.tasarim_cb['values'] = list(self.tumu)
+        if varsayilan or self.ana.tasarim_var.get() not in self.tumu:
+            self.ana.tasarim_var.set(ad)
+        self.durum.config(text='Kaydedildi: %s%s' % (ad, ' (varsayılan)' if varsayilan else ''))
+
+    def yeni(self):
+        ad = simpledialog.askstring('Yeni tasarım', 'Yeni tasarımın adı:', parent=self.p)
+        if not ad or not ad.strip():
+            return
+        self.ana.veri.tasarim_kaydet(ad.strip(), self.formdan())
+        self._liste_doldur(ad.strip())
+        self.ana.tasarim_cb['values'] = list(self.tumu)
+
+    def sil(self):
+        if not self.secili or len(self.tumu) <= 1:
+            return
+        if messagebox.askyesno('Sil', '"%s" tasarımı silinsin mi?' % self.secili, parent=self.p):
+            self.ana.veri.tasarim_sil(self.secili)
+            self._liste_doldur()
+            self.ana.tasarim_cb['values'] = list(self.tumu)
+            if self.ana.tasarim_var.get() not in self.tumu:
+                self.ana.tasarim_var.set(self.ana.veri.varsayilan_tasarim_adi())
+
+    def varsayilan_yap(self):
+        if self.secili:
+            self.ana.veri.tasarim_kaydet(self.secili, self.tumu[self.secili], varsayilan=True)
+            self._liste_doldur(self.secili)
+            self.durum.config(text='Varsayılan: ' + self.secili)
+
+    def onizle(self, uzanti):
+        self._firma_kaydet()
+        a = self.ana
+        g = a.girdi()
+        if not g['kalemler']:       # ekranda teklif yoksa ornek: ilk 3 paket
+            g = dict(g, musteri=g['musteri'] or 'Örnek Müşteri A.Ş.', teklif_no=g['teklif_no'] or 'ÖNİZLEME',
+                     kalemler=[{'kod': k} for k, p in list(a.paketler.items()) if p.get('aktif', 1)][:3])
+        s = hesapla(g, a.paketler, a.ayar, a.sabit_fiyatlar, a.rakip_listesi, a.kurallar)
+        klasor = os.path.join(a.veri.klasor, 'Teklifler')
+        os.makedirs(klasor, exist_ok=True)
+        yol = os.path.join(klasor, '_onizleme_%s%s' % (re.sub(r'\W', '_', self.v['ad'].get())[:30], uzanti))
+        try:
+            (teklif_cikti.pdf_olustur if uzanti == '.pdf' else teklif_cikti.excel_olustur)(
+                yol, g, s, a.ayar, self.formdan())
+        except PermissionError:
+            messagebox.showerror('Önizleme', 'Önizleme dosyası açık; kapatıp tekrar deneyin:\n' + yol, parent=self.p)
+            return
+        except Exception as e:
+            messagebox.showerror('Önizleme', str(e), parent=self.p)
+            return
+        dosya_ac(yol)
+
+
 # ======================================================================
 class YbhPenceresi:
     def __init__(self, ana):

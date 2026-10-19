@@ -9,7 +9,7 @@ from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 import teklif_cikti  # noqa: E402
-from teklif_hesap import hesapla, ybh_hesapla, kademe_katsayi, kod_listesi_coz  # noqa: E402
+from teklif_hesap import hesapla, ybh_hesapla, kademe_katsayi, kod_listesi_coz, sayi_coz, paket_kampanyasi_bul  # noqa: E402,E501
 from teklif_veri import TeklifVeri, AYAR_VARSAYILAN, varsayilan_klasor, veri_klasoru_degistir  # noqa: E402
 
 
@@ -120,7 +120,7 @@ class TeklifTest(unittest.TestCase):
         """Kullanici sikayeti: Ind. Tutar KDV haric toplami ve KDV alt toplamini etkilemiyordu."""
         s = self.h(kalemler=[{'kod': 'DIG1', 'ind_yuzde': 10, 'ind_tutar': 100}])
         self.assertEqual(s['lisans'], {'net': 620.0, 'kdv': 124.0, 'dahil': 744.0, 'toplam': 800.0,
-                                       'indirim': 180.0})
+                                       'indirim': 180.0, 'kamp_indirim': 0.0})
         bos = self.h(kalemler=[{'kod': 'DIG1'}])
         self.assertEqual(s['uyarlama']['sinir'], 'ALT SINIR')       # uyarlama iki durumda da 500
         self.assertEqual(round(bos['net_toplam'] - s['net_toplam'], 2), 180)
@@ -491,6 +491,170 @@ class KodYapistirTest(unittest.TestCase):
 
     def test_bos(self):
         self.assertEqual(kod_listesi_coz('', self.P), ([], [], []))
+
+
+class DiaKampanyaTest(unittest.TestCase):
+    """Kullanicinin DIA uye ekrani: 5 paket, E-Fatura'da 'Ekim 2026 E-Fatura' kampanyasi 7.800 TL.
+    DIA: Uyelik giris 297.900, Ek +1 masaustu 17.100, Yillik bulut hizmet bedeli 99.300."""
+    P = {'P12_PRKN_PRO': ('Masaüstü', 67600, 15, 15), 'P71_GENMUH': ('Masaüstü', 46400, 15, 15),
+         'M031_POS_01': ('Diğer', 20700, 0, 50), 'M031_POS_1_14': ('Diğer', 132000, 0, 50),
+         'M550_EFATURA_EARSIV_01': ('Diğer', 39000, 0, 15)}
+
+    def setUp(self):
+        self.pk = {k: {'kod': k, 'tur': t, 'ad': k, 'std_fiyat': f, 'ent_fiyat': 0, 'kull_yuzde': ku, 'ybh_yuzde': y,
+                       'std_saat': 1, 'ent_saat': 1, 'aktif': 1} for k, (t, f, ku, y) in self.P.items()}
+        self.ayar = dict(AYAR_VARSAYILAN, saatlik_ucret=100)
+        self.kamp = [{'ad': 'Ekim 2026 E-Fatura', 'kodlar': 'M550_*', 'yuzde': 0, 'tutar': 7800,
+                      'baslangic': '2026-10-01', 'bitis': '2026-10-31', 'aktif': 1}]
+
+    def h(self, tarih='2026-10-19', **k):
+        g = {'masaustu': 1, 'mobil': 0, 'tarih': tarih, 'kalemler': [dict({'kod': c}, **k.get(c, {})) for c in self.P]}
+        return hesapla(g, self.pk, self.ayar, kurallar={'paket_kampanyalari': self.kamp})
+
+    def test_dia_ekrani_ile_ayni(self):
+        s = self.h()
+        self.assertEqual(s['dia'], {'uyelik_giris': 297900, 'kampanya_indirimi': 7800, 'ek_masaustu': 17100,
+                                    'ek_mobil': 0, 'yillik_bulut': 99300})
+        self.assertEqual(s['lisans']['net'], 297900)
+        efat = s['satirlar'][-1]
+        self.assertEqual((efat['kamp_ad'], efat['kamp_indirim'], efat['net']), ('Ekim 2026 E-Fatura', 7800, 31200))
+
+    def test_kampanya_tarih_disi_ve_kapali(self):
+        self.assertEqual(self.h(tarih='2026-11-01')['lisans']['net'], 305700)
+        self.assertEqual(self.h(M550_EFATURA_EARSIV_01={'kamp_kapali': True})['lisans']['net'], 305700)
+
+    def test_elle_indirim_kampanyadan_sonra(self):
+        s = self.h(M550_EFATURA_EARSIV_01={'ind_yuzde': 10, 'ind_tutar': 200})
+        x = s['satirlar'][-1]
+        self.assertEqual((x['kamp_indirim'], x['elle_indirim'], x['net']), (7800, 3320, 27880))   # 31200*%10+200
+
+    def test_dia_kampanyasi_bizim_indirim_sayilmaz(self):
+        self.ayar['max_toplam_indirim'] = 1
+        s = self.h()
+        self.assertFalse([k for k in s['kontrol']['liste'] if 'Toplam indirim' in k['mesaj']])
+
+    def test_sifir_adam_saat_uyarisi(self):
+        self.pk['P12_PRKN_PRO']['std_saat'] = 0
+        s = hesapla({'masaustu': 1, 'mobil': 0, 'kalemler': [{'kod': 'P12_PRKN_PRO'}]}, self.pk, self.ayar,
+                    kurallar={'hizmetler': [{'kod': 'kurulum', 'ad': 'Kurulum', 'hesap': 'PAKET_SAAT'}]})
+        self.assertTrue([k for k in s['kontrol']['liste'] if 'Adam/saati 0' in k['mesaj']])
+
+    def test_kampanya_bul(self):
+        from datetime import date
+        self.assertIsNone(paket_kampanyasi_bul('P12_PRKN_PRO', self.kamp, date(2026, 10, 5)))
+        self.assertEqual(paket_kampanyasi_bul('m550_efatura_earsiv_01', self.kamp, date(2026, 10, 5))['tutar'], 7800)
+        self.assertIsNone(paket_kampanyasi_bul('M550_X', [dict(self.kamp[0], aktif=0)], date(2026, 10, 5)))
+
+    def test_sayi_coz(self):
+        for metin, beklenen in [('7.800', 7800), ('7 800,00', 7800), ('1.250.000', 1250000), ('20,5', 20.5),
+                                ('20.5', 20.5), ('%15', 15), ('₺7.800', 7800), ('1,250.50', 1250.5)]:
+            self.assertEqual(sayi_coz(metin), beklenen, metin)
+        self.assertIsNone(sayi_coz('abc'))
+
+
+class DiaListeIceAktarmaTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = self.tmp.name
+        motor_excel(os.path.join(self.d, 'motor.xlsx'))
+        self.v = TeklifVeri(os.path.join(self.d, 'teklif.db'))
+        self.v.excelden_ice_aktar(os.path.join(self.d, 'motor.xlsx'))
+
+    def tearDown(self):
+        self.v.db.close()
+        self.tmp.cleanup()
+
+    def test_fiyat_listesindeki_kampanya_kolonlari(self):
+        from openpyxl import Workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.append(['Tür', 'Kodu', 'Adı', 'Std. Fiyat', 'Ent. Fiyat', 'Kamp.İnd.%', 'Kamp.İnd.Tutar', 'Kamp.Açıklama'])
+        ws.append(['Masaüstü', 'MAS1', 'Muhasebe', 1100, 2000, 0, 0, ''])
+        ws.append(['Diğer', 'DIG1', 'E-Fatura', 800, 900, 0, 160, 'Ekim 2026 E-Fatura'])
+        yol = os.path.join(self.d, 'dia.xlsx')
+        wb.save(yol)
+        sonuc = self.v.paket_listesi_guncelle(yol)
+        self.assertEqual(sonuc['kampanyali'], ['DIG1'])
+        k = self.v.kurallar(gecmis=False)['paket_kampanyalari']
+        self.assertEqual([(x['ad'], x['kodlar'], x['tutar'], x['kaynak']) for x in k],
+                         [('Ekim 2026 E-Fatura - DIG1', 'DIG1', 160, 'DIA_LISTE')])
+        self.assertEqual(self.v.paketler()['MAS1']['std_saat'], 2)     # adam/saat korunur
+
+    def test_adam_saati_olmayan_excel_eski_saatleri_silmez(self):
+        from openpyxl import load_workbook
+        wb = load_workbook(os.path.join(self.d, 'motor.xlsx'))
+        del wb['ADAM SAAT']
+        yol = os.path.join(self.d, 'saatsiz.xlsx')
+        wb.save(yol)
+        rapor = self.v.excelden_ice_aktar(yol)
+        self.assertEqual(self.v.paketler()['MAS1']['std_saat'], 2)
+        self.assertTrue(any('korundu' in r for r in rapor))
+
+
+class TasarimTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = self.tmp.name
+        motor_excel(os.path.join(self.d, 'motor.xlsx'))
+        self.v = TeklifVeri(os.path.join(self.d, 'teklif.db'))
+        self.v.excelden_ice_aktar(os.path.join(self.d, 'motor.xlsx'))
+        self.ayar = dict(self.v.ayarlar(), firma_telefon='0312 000', hazirlayan_ad='Ayşe Satış',
+                         firma_banka='IBAN: TR00')
+        self.g = {'teklif_no': 'RT-9', 'musteri': 'Örnek Ltd.', 'masaustu': 2, 'mobil': 0,
+                  'musteri_bilgi': {'yetkili': 'Ali Veli'}, 'kalemler': [{'kod': 'MAS1'}, {'kod': 'DIG1'}]}
+        self.s = hesapla(self.g, self.v.paketler(), self.ayar, kurallar=self.v.kurallar(gecmis=False))
+
+    def tearDown(self):
+        self.v.db.close()
+        self.tmp.cleanup()
+
+    def test_hazir_tasarimlar_ve_varsayilan(self):
+        self.assertEqual(sorted(self.v.tasarimlar()), ['Kurumsal', 'Modern', 'Sade'])
+        self.assertEqual(self.v.varsayilan_tasarim_adi(), 'Kurumsal')
+        t = self.v.tasarim('Modern')
+        t['goster']['tco'] = False
+        self.v.tasarim_kaydet('Benim', t, varsayilan=True)
+        self.assertEqual(self.v.varsayilan_tasarim_adi(), 'Benim')
+        self.assertFalse(self.v.tasarim()['goster']['tco'])
+        self.assertEqual(self.v.tasarim('olmayan')['sablon'], 'Modern')     # bilinmeyen -> varsayilan
+        self.v.tasarim_sil('Benim')
+        self.assertIn(self.v.varsayilan_tasarim_adi(), self.v.tasarimlar())
+
+    def test_alan_secimi_ve_metinler(self):
+        import teklif_tasarim
+        t = teklif_tasarim.hazir('Kurumsal')
+        b = teklif_cikti.bolumler(self.g, self.s, self.ayar, t)
+        turler = [x[0] for x in b]
+        for tur in ('taraflar', 'paragraf', 'maddeler', 'imza', 'vurgu'):
+            self.assertIn(tur, turler)
+        self.assertIn('Sayın Ali Veli', next(x[1] for x in b if x[0] == 'paragraf'))
+        lisans = next(x for x in b if x[0] == 'tablo')
+        self.assertEqual(lisans[1], ['#', 'Paket / Modül', 'Kapsam', 'Liste Tutarı', 'İndirim', 'Net Tutar'])
+        t['goster'].update(liste_indirim=False, kullanici_kolonu=False, on_yazi=False, taraflar=False, banka=False)
+        b = teklif_cikti.bolumler(self.g, self.s, self.ayar, t)
+        self.assertEqual(next(x for x in b if x[0] == 'tablo')[1], ['#', 'Paket / Modül', 'Net Tutar'])
+        self.assertNotIn('taraflar', [x[0] for x in b])
+        self.assertNotIn('Banka Bilgileri', [x[1] for x in b if x[0] == 'bolum'])
+
+    def test_uc_sablon_pdf_ve_excel(self):
+        import teklif_tasarim
+        from openpyxl import load_workbook
+        for ad in teklif_tasarim.SABLONLAR:
+            t = teklif_tasarim.hazir(ad)
+            pdf = teklif_cikti.pdf_olustur(os.path.join(self.d, ad + '.pdf'), self.g, self.s, self.ayar, t)
+            with open(pdf, 'rb') as f:
+                self.assertTrue(f.read(4) == b'%PDF', ad)
+            xl = teklif_cikti.excel_olustur(os.path.join(self.d, ad + '.xlsx'), self.g, self.s, self.ayar, t)
+            hucreler = [c.value for r in load_workbook(xl).active.iter_rows() for c in r if c.value is not None]
+            self.assertIn('Örnek Ltd.', hucreler)
+            self.assertIn(self.s['genel_toplam'], hucreler)
+
+    def test_bozuk_tasarim_varsayilana_doner(self):
+        import teklif_tasarim
+        t = teklif_tasarim.tamamla({'sablon': 'Yok', 'ana_renk': 'mavi', 'yazi_boyutu': 'x', 'goster': {'tco': 0}})
+        self.assertEqual((t['sablon'], t['ana_renk'], t['yazi_boyutu']), ('Kurumsal', '#1F3A5F', 9))
+        self.assertFalse(t['goster']['tco'])
+        self.assertTrue(t['goster']['imza'])
 
 
 if __name__ == '__main__':

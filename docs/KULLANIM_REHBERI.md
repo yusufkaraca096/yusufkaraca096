@@ -1411,6 +1411,25 @@ Yıllık destek saati = taban saat + kullanıcı × destek_kullanici_saat + mod�
 - Aynı müşteri için Ekonomik / Önerilen / Kapsamlı teklifleri ayrı kaydedin (Etiket alanı). Geçmiş'te Ctrl ile 2-4 tanesini seçip "Seçilenleri Karşılaştır": yan yana karşılaştırma PDF'i.
 - Revizyon Kaydet: RT-2026-0001 → RT-2026-0001-R1; PDF başlığında "Revizyon 1" yazar, kayıtta önceki sürümle genel toplam farkı gösterilir.
 
+### DİA paket kampanyaları ve DİA ekranıyla karşılaştırma
+
+- DİA'nın paket bazlı kampanyaları (ör. "Ekim 2026 E-Fatura" 7.800 TL) Veriler > DİA Paket Kampanyaları'na girilir: paket kodları (virgülle, * joker: M550_*), İnd. % veya İnd. Tutar, başlangıç-bitiş tarihi.
+- DİA fiyat listesi Excel'inde "Kamp.İnd.%", "Kamp.İnd.Tutar", "Kamp.Açıklama" kolonları varsa "DIA Fiyat Listesini Güncelle" bunları kendiliğinden kampanya olarak alır.
+- Teklifte kampanya satırın "DİA Kamp. İnd." kolonunda görünür ve liste tutarından düşer; elle İnd. % / İnd. Tutar kampanyalı tutar üzerinden uygulanır. Kolona çift tıklayınca o satırda kampanya kapanır/açılır. DİA kampanyası sizin "toplam indirim" sınırınıza sayılmaz.
+- Ekranın altındaki mavi satır DİA üye ekranıyla aynı rakamları verir: Üyelik Giriş Tutarı (lisans net), Ek +1 Masaüstü / Mobil (birim × Kull. %), Yıllık Bulut Hizmet Bedeli (liste × YBH %). Örnek: Perakende Pro + Genel Muhasebe + POS 1 + POS 1+14 + E-Fatura (−7.800) → 297.900 / 17.100 / 99.300.
+- Tutar yazarken 7.800, 7 800, 7.800,00 veya ₺7.800 yazabilirsiniz; hepsi 7800 olarak okunur (eskiden 7.800 → 7,8 okunuyordu).
+- Adam/saati olmayan bir Excel içe aktarılırsa önceki adam/saatler korunur; A/S'si 0 olan paket teklife eklenirse Kontroller'de uyarı çıkar (kurulum saati eksik hesaplanmasın).
+
+### PDF / Excel tasarımı (Tasarım düğmesi)
+
+- Üç hazır tasarım: Kurumsal (logo solda, firma bilgileri sağda), Modern (renkli bant başlık), Sade (siyah-beyaz, yazıcı dostu). Kopyalayıp kendi tasarımınızı oluşturabilirsiniz.
+- Görünüm: şablon, ana ve vurgu rengi, yazı boyutu, teklif başlığı, logo (PNG/JPG).
+- Gösterilecek Alanlar: ön yazı, Teklifi Veren / Teklif Edilen kutuları, hazırlayan, paket kodları, paket içeriği, liste fiyatı / indirim kolonları, ek kullanıcı ve yıllık bulut bedeli, uyarlama dayanağı ve hesabı, ödeme seçenekleri, bakım, toplam maliyet, ticari şartlar, banka, notlar, imza, alt bilgi.
+- Metinler: ön yazı, ticari şartlar (her satır bir madde), kapanış. {musteri} {yetkili} {tarih} {gecerlilik} {teklif_no} {firma} {hazirlayan} alanları otomatik doldurulur.
+- Firma ve Hazırlayan: adres, telefon, e-posta, web, vergi no, banka/IBAN, teklifi hazırlayan kişi. Bunlar tüm tasarımlarda ortaktır.
+- Önizle ile PDF/Excel'i hemen görün; "Kaydet ve Varsayılan Yap" ile tasarım sabitlenir, yeni teklifler bu tasarımla açılır. Teklif ekranındaki "PDF tasarımı" kutusundan teklife özel başka tasarım seçilebilir ve teklifle birlikte kaydedilir.
+- PDF'te alt bilgi: firma iletişim bilgileri ve "Sayfa x / y". Excel'de logo, renkler ve yazdırma alt bilgisi de uygulanır.
+
 ### Excel'de düzeltilen hatalar
 
 - K24 hücresindeki bozuk formül (#NAME?) lisans neti, ara toplam, net toplam ve ödeme planını bozuyordu.
@@ -1446,7 +1465,16 @@ Teklif Geçmişi penceresinde arama, Aç/Düzenle, Kopyala (aynı teklifi yeni n
 | teklif_no_onek | RT | Teklif numarası ön eki: RT-2026-0001 |
 | firma_adi | RACA TEKNOLOJİ | PDF/Excel teklifin başlığındaki firma adı |
 | firma_adres | (boş) | Firma adresi |
-| firma_iletisim | (boş) | Telefon / e-posta / web (tek satır) |
+| firma_iletisim | (boş) | Ek iletişim satırı (isteğe bağlı; aşağıdaki alanlar doluysa gerekmez) |
+| firma_telefon | (boş) | Firma telefonu (teklif başlığı ve alt bilgi) |
+| firma_eposta | (boş) | Firma e-postası |
+| firma_web | (boş) | Firma web adresi |
+| firma_vergi | (boş) | Firma vergi dairesi / numarası |
+| firma_banka | (boş) | Banka bilgileri (Banka - Şube - IBAN; birden çok satır olabilir) |
+| hazirlayan_ad | (boş) | Teklifi hazırlayan kişi (PDF'te "Teklifi Veren" ve imza alanında) |
+| hazirlayan_unvan | (boş) | Hazırlayanın unvanı (ör. Satış Danışmanı) |
+| hazirlayan_telefon | (boş) | Hazırlayanın telefonu |
+| hazirlayan_eposta | (boş) | Hazırlayanın e-postası |
 | logo_yolu | (boş) | Logo dosyası (PNG/JPG). Boşsa logo basılmaz |
 | teklif_notlari | Fiyatlar KDV hariç belirtilmiş olup KDV ayrıca gösterilmiştir. Uyarlama bedeli tahmini adam/saat üzerinden hesaplanmıştır. | Teklifin altına yazılacak şartlar / notlar |
 | ybh_modul_kademe | 5:1; 10:1.1; 20:1.25; 30:1.45; *:1.65 | YBH modül sayısı katsayıları (en fazla:katsayı) |

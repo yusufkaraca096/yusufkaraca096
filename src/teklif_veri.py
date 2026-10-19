@@ -29,7 +29,16 @@ AYARLAR = [
     ('teklif_no_onek', 'RT', 'Teklif numarası ön eki: RT-2026-0001'),
     ('firma_adi', 'RACA TEKNOLOJİ', 'PDF/Excel teklifin başlığındaki firma adı'),
     ('firma_adres', '', 'Firma adresi'),
-    ('firma_iletisim', '', 'Telefon / e-posta / web (tek satır)'),
+    ('firma_iletisim', '', 'Ek iletişim satırı (isteğe bağlı; aşağıdaki alanlar doluysa gerekmez)'),
+    ('firma_telefon', '', 'Firma telefonu (teklif başlığı ve alt bilgi)'),
+    ('firma_eposta', '', 'Firma e-postası'),
+    ('firma_web', '', 'Firma web adresi'),
+    ('firma_vergi', '', 'Firma vergi dairesi / numarası'),
+    ('firma_banka', '', 'Banka bilgileri (Banka - Şube - IBAN; birden çok satır olabilir)'),
+    ('hazirlayan_ad', '', 'Teklifi hazırlayan kişi (PDF\'te "Teklifi Veren" ve imza alanında)'),
+    ('hazirlayan_unvan', '', 'Hazırlayanın unvanı (ör. Satış Danışmanı)'),
+    ('hazirlayan_telefon', '', 'Hazırlayanın telefonu'),
+    ('hazirlayan_eposta', '', 'Hazırlayanın e-postası'),
     ('logo_yolu', '', 'Logo dosyası (PNG/JPG). Boşsa logo basılmaz'),
     ('teklif_notlari', 'Fiyatlar KDV hariç belirtilmiş olup KDV ayrıca gösterilmiştir.\n'
                        'Uyarlama bedeli tahmini adam/saat üzerinden hesaplanmıştır.',
@@ -96,6 +105,10 @@ CREATE TABLE IF NOT EXISTS odeme_secenegi (
 CREATE TABLE IF NOT EXISTS bakim_paketi (
     ad TEXT PRIMARY KEY, saat_carpani REAL, yanit_suresi TEXT, yerinde_gun REAL, indirim REAL,
     aciklama TEXT, sira INTEGER);
+CREATE TABLE IF NOT EXISTS paket_kampanya (
+    ad TEXT PRIMARY KEY, kodlar TEXT, yuzde REAL DEFAULT 0, tutar REAL DEFAULT 0, baslangic TEXT, bitis TEXT,
+    aktif INTEGER DEFAULT 1, kaynak TEXT DEFAULT 'ELLE');
+CREATE TABLE IF NOT EXISTS tasarim (ad TEXT PRIMARY KEY, veri TEXT, varsayilan INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS gerceklesen (no TEXT, kalem TEXT, tahmin REAL, gercek REAL, PRIMARY KEY (no, kalem));
 CREATE TABLE IF NOT EXISTS teklif (
     no TEXT PRIMARY KEY, tarih TEXT, musteri TEXT, paket_tipi TEXT, kullanici TEXT,
@@ -169,15 +182,8 @@ KAMPANYA_KOSULLARI = {'toplu alım': 'kullanici>=10', 'rakip geçiş': 'soru:gec
 
 
 def _sayi(x, varsayilan=0.0):
-    if x is None or (isinstance(x, str) and not x.strip()):
-        return varsayilan
-    if isinstance(x, (int, float)):
-        return float(x)
-    try:
-        return float(str(x).replace(' ', '').replace('.', '').replace(',', '.')) if ',' in str(x) \
-            else float(str(x).replace(' ', ''))
-    except ValueError:
-        return varsayilan
+    from teklif_hesap import sayi_coz
+    return sayi_coz(x, varsayilan)
 
 
 def _metin(x):
@@ -318,10 +324,50 @@ class TeklifVeri:
             'odeme': [dict(r) for r in self.db.execute('SELECT * FROM odeme_secenegi ORDER BY sira, ad')],
             'bakim': [dict(r) for r in self.db.execute('SELECT * FROM bakim_paketi ORDER BY sira, ad')],
             'kampanyalar': self.kampanyalar(),
+            'paket_kampanyalari': [dict(r) for r in self.db.execute(
+                'SELECT * FROM paket_kampanya WHERE aktif=1 ORDER BY ad')],
         }
         if gecmis:
             k['gecmis'] = self.gecmis_ozeti()
         return k
+
+    # ------------------------------------------------------------ PDF / Excel tasarimlari
+    def tasarimlar(self):
+        """{ad: tasarim} ; tablo bossa hazir tasarimlar (Kurumsal varsayilan) eklenir."""
+        import teklif_tasarim as T
+        if not self.db.execute('SELECT 1 FROM tasarim LIMIT 1').fetchone():
+            with self.db:
+                for ad in T.HAZIR_TASARIMLAR:
+                    self.db.execute('INSERT OR IGNORE INTO tasarim VALUES (?,?,?)',
+                                    (ad, T.json_yaz(T.hazir(ad)), 1 if ad == 'Kurumsal' else 0))
+        return {r['ad']: T.json_oku(r['veri']) for r in self.db.execute('SELECT ad, veri FROM tasarim ORDER BY ad')}
+
+    def varsayilan_tasarim_adi(self):
+        tum = self.tasarimlar()
+        r = self.db.execute('SELECT ad FROM tasarim WHERE varsayilan=1 LIMIT 1').fetchone()
+        return r['ad'] if r and r['ad'] in tum else next(iter(tum))
+
+    def tasarim(self, ad=None):
+        """Adi verilen (yoksa varsayilan) tasarim."""
+        tum = self.tasarimlar()
+        return tum.get(ad) or tum[self.varsayilan_tasarim_adi()]
+
+    def tasarim_kaydet(self, ad, tasarim, varsayilan=False):
+        import teklif_tasarim as T
+        ad = (ad or '').strip()
+        if not ad:
+            raise ValueError('Tasarım adı boş olamaz')
+        self.degisti = True
+        with self.db:
+            self.db.execute('INSERT OR REPLACE INTO tasarim (ad, veri, varsayilan) VALUES (?, ?, COALESCE('
+                            '(SELECT varsayilan FROM tasarim WHERE ad=?), 0))', (ad, T.json_yaz(tasarim), ad))
+            if varsayilan:
+                self.db.execute('UPDATE tasarim SET varsayilan = (ad = ?)', (ad,))
+
+    def tasarim_sil(self, ad):
+        self.degisti = True
+        with self.db:
+            self.db.execute('DELETE FROM tasarim WHERE ad=?', (ad,))
 
     def gecmis_ozeti(self):
         """Satis asistani icin sonuclanmis teklifler: [{no, net, genel_toplam, sonuc, indirim, kullanici, red}]"""
@@ -482,6 +528,7 @@ class TeklifVeri:
                 'zorunlu': zorunlu_metni(ws.cell(r, 10).value), 'std_saat': 0.0, 'ent_saat': 0.0, 'aktif': 1}
         rapor.append('%d paket' % len(paketler))
 
+        saatli = set()
         if 'ADAM SAAT' in wb.sheetnames:
             ws = wb['ADAM SAAT']
             bulunan = 0
@@ -493,8 +540,23 @@ class TeklifVeri:
                     ent = ws.cell(r, 4).value
                     paketler[kod]['std_saat'] = std
                     paketler[kod]['ent_saat'] = round(std * 1.5) if ent is None else _sayi(ent)
+                    if std or _sayi(ent):
+                        saatli.add(kod)
                     bulunan += 1
             rapor.append('%d paketin adam/saati' % bulunan)
+        # Dosyada adam/saati olmayan (0 / bos) paketlerin onceki saatleri korunur
+        eski_paketler = self.paketler()
+        korunan = 0
+        for kod, p in paketler.items():
+            e = eski_paketler.get(kod)
+            if kod not in saatli and e and (e.get('std_saat') or e.get('ent_saat')):
+                p['std_saat'], p['ent_saat'] = e.get('std_saat') or 0, e.get('ent_saat') or 0
+                korunan += 1
+        if korunan:
+            rapor.append('%d paketin önceki adam/saati korundu (dosyada yoktu)' % korunan)
+        sifir = sum(1 for p in paketler.values() if not p['std_saat'] and not p['ent_saat'])
+        if sifir:
+            rapor.append('UYARI: %d paketin adam/saati 0 (Veriler > Paketler / Adam-Saat)' % sifir)
 
         ayar_adlari = {'enterprise masaüstü eşiği': 'ent_masaustu_esik', 'enterprise mobil eşiği': 'ent_mobil_esik',
                        'lisans yüzdesi (%)': 'lisans_yuzdesi', 'saatlik danışman ücreti': 'saatlik_ucret',
@@ -587,7 +649,7 @@ class TeklifVeri:
                      'kullanıcı %': 'kull_yuzde', 'kullanici %': 'kull_yuzde', 'ybh %': 'ybh_yuzde',
                      'açıklama': 'aciklama', 'aciklama': 'aciklama', 'ürünler': 'urunler', 'urunler': 'urunler',
                      'tür': 'tur', 'tur': 'tur', 'grup': 'tur', 'zorunlu': 'zorunlu'}
-        yeni = {}
+        yeni, kamp = {}, {}
         for ws in wb.worksheets:
             satirlar = list(ws.iter_rows(values_only=True))
             for i, satir in enumerate(satirlar[:20]):
@@ -599,6 +661,10 @@ class TeklifVeri:
                 if 'kod' in eslesme and 'std_fiyat' in eslesme:
                     if 'tur' not in eslesme and eslesme['kod'] > 0:
                         eslesme['tur'] = eslesme['kod'] - 1
+                    for c, v in enumerate(satir):
+                        k = _KAMP_BASLIK.get(re.sub(r'[\s.:]+', '', _katla(v)))
+                        if k and k not in eslesme:
+                            eslesme[k] = c
                     for s in satirlar[i + 1:]:
                         kod = _metin(s[eslesme['kod']]) if eslesme['kod'] < len(s) else ''
                         if not kod:
@@ -609,6 +675,9 @@ class TeklifVeri:
                                      'kull_yuzde': _sayi(al('kull_yuzde')), 'ybh_yuzde': _sayi(al('ybh_yuzde')),
                                      'aciklama': _metin(al('aciklama')), 'urunler': _metin(al('urunler')),
                                      'zorunlu': zorunlu_metni(al('zorunlu'))}
+                        if _sayi(al('kamp_yuzde')) or _sayi(al('kamp_tutar')):
+                            kamp[kod] = {'yuzde': _sayi(al('kamp_yuzde')), 'tutar': _sayi(al('kamp_tutar')),
+                                         'aciklama': _metin(al('kamp_aciklama')) or 'DIA kampanyası'}
                     break
             if yeni:
                 break
@@ -630,7 +699,25 @@ class TeklifVeri:
                 self._paket_yaz(p)
             self.db.execute('INSERT OR REPLACE INTO ayar VALUES (?, ?)',
                             ('fiyat_listesi_tarihi', datetime.now().strftime('%Y-%m-%d')))
-        return {'toplam': len(yeni), 'fiyati_degisen': degisen, 'yeni': eklenen, 'listeden_kalkan': kalkan}
+            # Listedeki DIA kampanyalari (Kamp. Ind. % / Tutar): onceki listeden gelenlerin yerine yazilir
+            self.db.execute("DELETE FROM paket_kampanya WHERE kaynak='DIA_LISTE'")
+            for kod, k in kamp.items():
+                self.db.execute("INSERT OR REPLACE INTO paket_kampanya (ad, kodlar, yuzde, tutar, baslangic, bitis, "
+                                "aktif, kaynak) VALUES (?,?,?,?,'','',1,'DIA_LISTE')",
+                                ('%s - %s' % (k['aciklama'], kod), kod, k['yuzde'], k['tutar']))
+        return {'toplam': len(yeni), 'fiyati_degisen': degisen, 'yeni': eklenen, 'listeden_kalkan': kalkan,
+                'kampanyali': sorted(kamp)}
+
+
+_KAMP_BASLIK = {'kampind%': 'kamp_yuzde', 'kampindirim%': 'kamp_yuzde', 'kampanyaindirim%': 'kamp_yuzde',
+                'kampanya%': 'kamp_yuzde', 'kampindtutar': 'kamp_tutar', 'kampindirimtutari': 'kamp_tutar',
+                'kampanyaindirimtutari': 'kamp_tutar', 'kampanyatutari': 'kamp_tutar',
+                'kampaciklama': 'kamp_aciklama', 'kampanyaaciklama': 'kamp_aciklama', 'kampanyaadi': 'kamp_aciklama'}
+
+
+def _katla(x):
+    from teklif_hesap import katla
+    return katla(_metin(x))
 
 
 def zorunlu_metni(x):
@@ -679,7 +766,7 @@ def sifre_ozeti(sifre):
 
 def _tablo_adi(t):
     if t not in ('paket', 'ayar', 'sabit_kalem', 'kampanya', 'rakip', 'hizmet', 'kesif', 'odeme_secenegi',
-                 'bakim_paketi'):
+                 'bakim_paketi', 'paket_kampanya'):
         raise ValueError('Bilinmeyen tablo: ' + str(t))
     return t
 

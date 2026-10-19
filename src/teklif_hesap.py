@@ -38,6 +38,31 @@ def _f(x, varsayilan=0.0):
         return varsayilan
 
 
+def sayi_coz(metin, bos=None):
+    """Kullanicinin yazdigi sayi: '7.800' / '7 800,00' / '1.250.000' / '20,5' / '%15' / '₺7.800' -> float.
+
+    Nokta ve virgul birlikteyse sondaki ondalik ayiricidir. Yalniz nokta varsa ve 3'erli gruplar halindeyse
+    (7.800, 1.250.000) binlik ayiricidir; degilse (20.5) ondaliktir. Yalniz virgul ondaliktir.
+    """
+    if isinstance(metin, (int, float)):
+        return float(metin)
+    s = str(metin if metin is not None else '').strip()
+    for x in ('%', 'TL', 'tl', '₺', ' ', '\xa0', '\u202f'):
+        s = s.replace(x, '')
+    if not s:
+        return bos
+    if ',' in s and '.' in s:
+        s = s.replace('.', '').replace(',', '.') if s.rfind(',') > s.rfind('.') else s.replace(',', '')
+    elif ',' in s:
+        s = s.replace(',', '.')
+    elif re.fullmatch(r'[-+]?\d{1,3}(\.\d{3})+', s):
+        s = s.replace('.', '')
+    try:
+        return float(s)
+    except ValueError:
+        return bos
+
+
 def katla(s):
     return str(s or '').replace('İ', 'i').replace('I', 'ı').lower().translate(_KATLA)
 
@@ -51,6 +76,7 @@ VARSAYILAN_KURALLAR = {
     'hizmetler': [{'kod': 'kurulum', 'ad': 'Kurulum ve parametre ayarları', 'hesap': 'PAKET_SAAT', 'p1': 0, 'p2': 0,
                    'carpan': 1, 'kapsam': ''}],
     'sorular': [],
+    'paket_kampanyalari': [],
     'odeme': [{'ad': 'Peşin', 'tur': 'PESIN', 'taksit': 1, 'indirim': 5, 'musteriye_goster': 1},
               {'ad': '2 Taksit', 'tur': 'TAKSIT', 'taksit': 2, 'musteriye_goster': 1},
               {'ad': '3 Taksit', 'tur': 'TAKSIT', 'taksit': 3, 'musteriye_goster': 1},
@@ -167,20 +193,59 @@ def kullanici_sayisi(paket, masaustu, mobil):
     return 1
 
 
-def satir_hesapla(paket, tip, adet, ind_yuzde, kdv, saat=None, ind_tutar=0):
+def satir_hesapla(paket, tip, adet, ind_yuzde, kdv, saat=None, ind_tutar=0, kamp=None):
     birim = birim_fiyat(paket, tip)
     kull = float(paket.get('kull_yuzde') or 0)
     toplam = 0.0 if adet <= 0 else birim + (adet - 1) * birim * kull / 100
-    # Indirim = yuzde + sabit tutar; ikisi de satir NET'inden duser, KDV ve tum toplamlar net uzerinden
-    indirim = min(toplam * float(ind_yuzde or 0) / 100 + float(ind_tutar or 0), toplam)
+    # 1) DIA paket kampanyasi (Kamp. Ind. % / Tutar) liste toplamindan duser
+    kamp_ind = 0.0
+    if kamp and toplam:
+        kamp_ind = min(toplam * _f(kamp.get('yuzde')) / 100 + _f(kamp.get('tutar')), toplam)
+    # 2) Elle indirim = yuzde + sabit tutar, kampanyali tutar uzerinden; KDV ve tum toplamlar net uzerinden
+    kalan = toplam - kamp_ind
+    elle_ind = min(kalan * float(ind_yuzde or 0) / 100 + float(ind_tutar or 0), kalan)
+    indirim = kamp_ind + elle_ind
     net = toplam - indirim
     tablo_saat = float(paket.get('ent_saat' if tip == 'ENTERPRISE' else 'std_saat') or 0)
     saat = tablo_saat if saat in (None, '') else float(saat)
     return {'kod': paket['kod'], 'ad': paket.get('ad', ''), 'tur': paket.get('tur', ''), 'adet': adet,
+            'aciklama': paket.get('aciklama') or '',
             'birim': _r(birim), 'kull_yuzde': kull, 'toplam': _r(toplam), 'ind_yuzde': float(ind_yuzde or 0),
-            'ind_tutar': float(ind_tutar or 0),
+            'ind_tutar': float(ind_tutar or 0), 'kamp_ad': (kamp or {}).get('ad', '') if kamp_ind else '',
+            'kamp_indirim': _r(kamp_ind), 'elle_indirim': _r(elle_ind),
             'indirim': _r(indirim), 'net': _r(net), 'kdv': _r(net * kdv / 100), 'dahil': _r(net * (1 + kdv / 100)),
             'saat': saat, 'tablo_saat': tablo_saat}
+
+
+def paket_kampanyasi_bul(kod, kampanyalar, tarih):
+    """Koda uyan, aktif ve tarihi gecerli ilk DIA paket kampanyasi. kodlar: 'M550_*, P12_PRKN_PRO' (* joker)."""
+    import fnmatch
+    gun = tarih.strftime('%Y-%m-%d') if hasattr(tarih, 'strftime') else str(tarih or '')[:10]
+    for k in kampanyalar or []:
+        if not int(_f(k.get('aktif'), 1)):
+            continue
+        if k.get('baslangic') and gun and gun < str(k['baslangic'])[:10]:
+            continue
+        if k.get('bitis') and gun and gun > str(k['bitis'])[:10]:
+            continue
+        for desen in re.split(r'[,;\s]+', str(k.get('kodlar') or '')):
+            if desen and fnmatch.fnmatchcase(katla(kod), katla(desen)):
+                return k
+    return None
+
+
+def dia_ozeti(satirlar, paketler, tip, ybh):
+    """DIA uye ekraniyla birebir karsilastirma: Uyelik giris tutari, ek +1 kullanici, yillik bulut hizmet bedeli."""
+    ek = {'masaustu': 0.0, 'mobil': 0.0}
+    for x in satirlar:
+        p = paketler.get(x['kod']) or {}
+        tur = (p.get('tur') or '').strip().lower()
+        alan = 'masaustu' if tur.startswith('mas') else 'mobil' if tur.startswith('mob') else None
+        if alan:
+            ek[alan] += birim_fiyat(p, tip) * float(p.get('kull_yuzde') or 0) / 100
+    return {'uyelik_giris': _r(sum(x['net'] for x in satirlar)),
+            'kampanya_indirimi': _r(sum(x['kamp_indirim'] for x in satirlar)),
+            'ek_masaustu': _r(ek['masaustu']), 'ek_mobil': _r(ek['mobil']), 'yillik_bulut': _r(ybh['baz'])}
 
 
 def _kdvli(net, kdv):
@@ -523,8 +588,13 @@ def kontroller(girdi, s, ayar, paketler, kurallar):
     for u in s['_uyarilar']:
         kontrol('KRİTİK' if 'listesinde yok' in u else 'UYARI', u)
     _paket_kontrolleri(s['satirlar'], paketler, s['paket_tipi'], kontrol)
+    sifir = [x['kod'] for x in s['satirlar'] if not x['tablo_saat'] and not x['saat'] and x['toplam']]
+    if sifir and any(h.get('hesap') == 'PAKET_SAAT' for h in kurallar.get('hizmetler', [])):
+        kontrol('UYARI', 'Adam/saati 0 olan paket(ler): %s — kurulum saati eksik hesaplanır. Veriler > Paketler / '
+                         'Adam-Saat\'ten girin veya A/S kolonuna elle yazın.' % ', '.join(sifir[:8]))
 
-    liste_fiyati = s['lisans']['toplam'] + s['uyarlama']['ham_liste'] + s['sabit']['net'] + s['seyahat']['tutar']
+    # DIA'nin paket kampanyasi bizim verdigimiz indirim sayilmaz
+    liste_fiyati = s['lisans']['toplam'] - s['lisans'].get('kamp_indirim', 0) + s['uyarlama']['ham_liste'] + s['sabit']['net'] + s['seyahat']['tutar']
     toplam_ind = (1 - s['net_toplam'] / liste_fiyati) * 100 if liste_fiyati else 0
     max_ind = _f(ayar.get('max_toplam_indirim'))
     if max_ind and toplam_ind > max_ind + 0.05:
@@ -745,13 +815,16 @@ def hesapla(girdi, paketler, ayar, sabit_fiyatlar=None, rakipler=None, kurallar=
             continue
         adet = k.get('adet')
         adet = kullanici_sayisi(p, masaustu, mobil) if adet in (None, '') else int(adet)
-        satir = satir_hesapla(p, tip, adet, k.get('ind_yuzde', 0), kdv, k.get('saat'), k.get('ind_tutar', 0))
+        kamp = None if k.get('kamp_kapali') else paket_kampanyasi_bul(p['kod'], kurallar.get('paket_kampanyalari'),
+                                                                       _tarih(girdi.get('tarih')))
+        satir = satir_hesapla(p, tip, adet, k.get('ind_yuzde', 0), kdv, k.get('saat'), k.get('ind_tutar', 0), kamp)
         satir['sira'] = sira     # formdaki kalem sirasi (bilinmeyen kod atlaninca kaymasin)
         satirlar.append(satir)
 
     lisans_toplam = sum(s['toplam'] for s in satirlar)
     lisans_indirim = sum(s['indirim'] for s in satirlar)
-    lisans = dict(_kdvli(sum(s['net'] for s in satirlar), kdv), toplam=_r(lisans_toplam), indirim=_r(lisans_indirim))
+    lisans = dict(_kdvli(sum(s['net'] for s in satirlar), kdv), toplam=_r(lisans_toplam), indirim=_r(lisans_indirim),
+                  kamp_indirim=_r(sum(s['kamp_indirim'] for s in satirlar)))
 
     hizmet = hizmet_hesapla(satirlar, masaustu + mobil, girdi.get('cevaplar') or {}, kurallar['hizmetler'],
                             kurallar['sorular'], girdi.get('hizmet_elle'))
@@ -802,6 +875,7 @@ def hesapla(girdi, paketler, ayar, sabit_fiyatlar=None, rakipler=None, kurallar=
                      'cevaplar': girdi.get('cevaplar') or {}, 'tarih': _tarih(girdi.get('tarih'))}}
     s['bakim'] = bakim_hesapla(girdi, s, paketler, ayar, kurallar['bakim'], kurallar['sorular'])
     s['ybh'] = ybh_hesapla(tip, [{'kod': x['kod'], 'kullanici': x['adet']} for x in satirlar], paketler, ayar)
+    s['dia'] = dia_ozeti(satirlar, paketler, tip, s['ybh'])
     secili_bakim = next((b for b in s['bakim']['paketler'] if b['ad'] == s['bakim']['secili']), None)
     s['tco'] = tco_hesapla(net_toplam, s['ybh']['yillik']['net'], secili_bakim['yillik'] if secili_bakim else 0,
                            ayar, kdv)

@@ -12,7 +12,7 @@ from tkinter import ttk, filedialog, messagebox, simpledialog
 import teklif_cikti
 import teklif_tasarim
 from teklif_hesap import (hesapla, ybh_hesapla, kod_listesi_coz, sayi_coz, soru_etkisi, soru_etki_metni,
-                          standart_cevaplar, kesif_ozeti, satis_brifingi, katla as _katla_h)
+                          paket_indirimi, standart_cevaplar, kesif_ozeti, satis_brifingi, katla as _katla_h)
 from teklif_veri import (TeklifVeri, AYARLAR, ASAMALAR, AKTIVITE_TURLERI, varsayilan_klasor,
                          veri_klasoru_degistir)
 
@@ -103,8 +103,8 @@ SEVIYE_RENK = {'KRİTİK': '#c0392b', 'UYARI': '#d35400', 'ÖNERİ': '#2471a3', 
 class TeklifPenceresi:
     KOLONLAR = [('kod', 'Paket Kodu', 150), ('ad', 'Paket Adı', 230), ('tur', 'Tür', 80), ('adet', 'Adet ✎', 60),
                 ('birim', 'Birim Fiyat', 95), ('kull', 'Kull. %', 55), ('toplam', 'Toplam', 105),
-                ('kamp', 'DİA Kamp. İnd.', 100), ('ind_yuzde', 'İnd. % ✎', 65), ('ind_tutar', 'İnd. Tutar ✎', 90), ('net', 'Net (KDV Hr.)', 110),
-                ('dahil', 'KDV Dahil', 110), ('saat', 'A/S ✎', 55)]
+                ('ind_yuzde', 'İnd. % ✎', 65), ('ind_tutar', 'İnd. Tutar ✎', 90), ('kamp', 'Kamp. Açıklama ✎', 130),
+                ('net', 'Net (KDV Hr.)', 105), ('dahil', 'KDV Dahil', 105), ('saat', 'A/S ✎', 50)]
     DUZENLENIR = {'adet': 'adet', 'ind_yuzde': 'ind_yuzde', 'ind_tutar': 'ind_tutar', 'saat': 'saat'}
 
     def __init__(self, parent=None, veri_yolu=None, musteri_klasoru=None):
@@ -791,14 +791,12 @@ class TeklifPenceresi:
                 any(k.get(a) for a in ('ind_yuzde', 'ind_tutar'))     # elle 0 saat de elle sayilir
             self.tree.insert('', 'end', iid=str(i), tags=('elle',) if elle else (), values=(
                 x['kod'], x['ad'], x['tur'], x['adet'], para(x['birim']), '%g' % x['kull_yuzde'], para(x['toplam']),
-                '(kapalı)' if k.get('kamp_kapali') else para(x['kamp_indirim']) if x['kamp_indirim'] else '',
                 '%g' % x['ind_yuzde'] if x['ind_yuzde'] else '', para(x['ind_tutar']) if x['ind_tutar'] else '',
-                para(x['net']), para(x['dahil']), '%g' % x['saat']))
+                k.get('kamp_aciklama') or '', para(x['net']), para(x['dahil']), '%g' % x['saat']))
         li = s['lisans']
         self.tree.insert('', 'end', iid='toplam', tags=('toplam',), values=(
-            'TOPLAM', '%d kalem' % len(s['satirlar']), '', '', '', '', para(li['toplam']),
-            para(li['kamp_indirim']) if li['kamp_indirim'] else '', '',
-            para(li['indirim'] - li['kamp_indirim']) if li['indirim'] - li['kamp_indirim'] else '', para(li['net']), para(li['dahil']),
+            'TOPLAM', '%d kalem' % len(s['satirlar']), '', '', '', '', para(li['toplam']), '',
+            para(li['indirim']) if li['indirim'] else '', '', para(li['net']), para(li['dahil']),
             '%g' % sum(x['saat'] for x in s['satirlar'])))
         for iid in secili:
             if self.tree.exists(iid):
@@ -1128,7 +1126,9 @@ class TeklifPenceresi:
         PaketSecici(self.pencere, self.paketler, self.ayar, self._paket_eklendi)
 
     def _paket_eklendi(self, kod, adet=None, hesapla=True):
-        self.kalemler.append({'kod': kod, 'adet': adet, 'ind_yuzde': 0, 'ind_tutar': 0, 'saat': None})
+        kalem = {'kod': kod, 'adet': adet, 'ind_yuzde': 0, 'ind_tutar': 0, 'saat': None}
+        kalem.update(paket_indirimi(self.paketler.get(kod) or {}) or {})     # DIA listesindeki paket indirimi
+        self.kalemler.append(kalem)
         if hesapla:
             self.hesapla()
 
@@ -1202,7 +1202,7 @@ class TeklifPenceresi:
             p = self.paketler.get(self.kalemler[int(sec[0])]['kod'], {})
             zorunlu = (' | Gerekli modüller: ' + p['zorunlu']) if p.get('zorunlu') else ''
             x = next((x for x in (self.sonuc or {}).get('satirlar', []) if x['sira'] == int(sec[0])), {})
-            kamp = (' | DİA kampanyası: %s (−%s TL; kapatmak için kolona çift tıklayın)' % (
+            kamp = (' | Kampanya: %s (−%s TL; DİA indirimi, sizin indirim sınırınıza sayılmaz)' % (
                 x['kamp_ad'], para(x['kamp_indirim']))) if x.get('kamp_indirim') else ''
             self.aciklama_lbl.config(text=((p.get('aciklama') or '').replace('\n', ' ')[:400] + zorunlu + kamp))
 
@@ -1212,10 +1212,14 @@ class TeklifPenceresi:
         if not iid or iid == 'toplam':
             return
         ad = self.KOLONLAR[int(kolon[1:]) - 1][0]
-        if ad == 'kamp':        # DIA kampanyasini bu satirda ac / kapat
+        if ad == 'kamp':        # kampanya aciklamasi (doluysa satir indirimi DIA kampanyasi sayilir)
             kalem = self.kalemler[int(iid)]
-            kalem['kamp_kapali'] = not kalem.get('kamp_kapali')
-            self.hesapla()
+            yeni = simpledialog.askstring('Kampanya açıklaması', 'Bu satırdaki indirimin kampanya açıklaması\n'
+                                          '(boş = sizin verdiğiniz indirim):', initialvalue=kalem.get('kamp_aciklama')
+                                          or '', parent=self.pencere)
+            if yeni is not None:
+                kalem['kamp_aciklama'] = yeni.strip()
+                self.hesapla()
             return
         if ad not in self.DUZENLENIR:
             return
@@ -1746,11 +1750,6 @@ class VeriPenceresi:
         ('kampanya', '  Kampanyalar  ', [('ad', 'Kampanya', 180, True), ('yuzde', 'İndirim %', 80, True),
                                          ('durum', 'Durum (AKTİF/PASİF)', 130, True), ('aciklama', 'Açıklama', 300, True),
                                          ('kosul', 'Koşul (satış asistanı)', 300, True)]),
-        ('paket_kampanya', '  DİA Paket Kampanyaları  ', [
-            ('ad', 'Kampanya adı', 220, True), ('kodlar', 'Paket kodları (virgülle; * joker: M550_*)', 280, True),
-            ('yuzde', 'İnd. %', 70, True), ('tutar', 'İnd. Tutar', 90, True),
-            ('baslangic', 'Başlangıç (YYYY-AA-GG)', 140, True), ('bitis', 'Bitiş (YYYY-AA-GG)', 130, True),
-            ('aktif', 'Aktif', 50, True), ('kaynak', 'Kaynak', 90, False)]),
         ('senaryo', '  Satış Senaryoları  ', [
             ('baslik', 'Başlık (aşama adı / itiraz)', 200, True), ('tur', 'Tür (ASAMA / ITIRAZ / TAVIZ)', 170, True),
             ('metin', 'Metin (satır satır; {saat} {gun} {dokum} {hedef} {taban} {gecerlilik} {bakim} {rakip_ort})',
@@ -1760,7 +1759,9 @@ class VeriPenceresi:
         ('paket', '  Paketler / Adam-Saat  ', [
             ('kod', 'Kod', 170, True), ('ad', 'Ad', 230, True), ('tur', 'Tür', 90, True),
             ('std_fiyat', 'Std. Fiyat', 90, True), ('ent_fiyat', 'Ent. Fiyat', 90, True),
-            ('kull_yuzde', 'Kull. %', 60, True), ('ybh_yuzde', 'YBH %', 60, True), ('std_saat', 'Std A/S', 65, True),
+            ('kull_yuzde', 'Kull. %', 60, True), ('ybh_yuzde', 'YBH %', 60, True),
+            ('kamp_yuzde', 'Kamp. İnd. %', 85, True), ('kamp_tutar', 'Kamp. İnd. Tutar', 105, True),
+            ('kamp_aciklama', 'Kamp. Açıklama', 150, True), ('std_saat', 'Std A/S', 65, True),
             ('ent_saat', 'Ent A/S', 65, True), ('aktif', 'Aktif', 50, True), ('aciklama', 'Açıklama', 300, True),
             ('urunler', 'Ürünler', 200, True), ('zorunlu', 'Gerekli modüller', 200, True)]),
         ('hizmet', '  Hizmet Kalemleri  ', [
@@ -1786,7 +1787,7 @@ class VeriPenceresi:
     ]
     SAYI = {'fiyat', 'yuzde', 'saat', 'ucret', 'std_fiyat', 'ent_fiyat', 'kull_yuzde', 'ybh_yuzde', 'std_saat',
             'ent_saat', 'aktif', 'p1', 'p2', 'carpan', 'sira', 'esik', 'taksit', 'indirim', 'vade_farki', 'aylik_vade',
-            'komisyon', 'musteriye_goster', 'saat_carpani', 'yerinde_gun', 'tutar'}
+            'komisyon', 'musteriye_goster', 'saat_carpani', 'yerinde_gun', 'tutar', 'kamp_yuzde', 'kamp_tutar'}
 
     def __init__(self, ana):
         self.ana = ana
@@ -1974,10 +1975,13 @@ class VeriPenceresi:
         self.ana.veri_degisti()
         ornek = lambda x: (': ' + ', '.join(x[:8]) + (' ...' if len(x) > 8 else '')) if x else ''  # noqa: E731
         messagebox.showinfo('Fiyat listesi güncellendi', '%d paket okundu.\nFiyatı değişen: %d%s\nYeni paket: %d%s\n'
-                            'Listeden kalkan (pasif yapıldı): %d%s\n\nYeni paketlerin adam/saatini Paketler sekmesinden '
-                            'girin. Önceki hal yedeklendi.' % (
+                            'Listeden kalkan (pasif yapıldı): %d%s\n%s\n\nYeni paketlerin adam/saatini Paketler '
+                            'sekmesinden girin. Önceki hal yedeklendi.' % (
                                 r['toplam'], len(r['fiyati_degisen']), ornek(r['fiyati_degisen']), len(r['yeni']),
-                                ornek(r['yeni']), len(r['listeden_kalkan']), ornek(r['listeden_kalkan'])), parent=self.p)
+                                ornek(r['yeni']), len(r['listeden_kalkan']), ornek(r['listeden_kalkan']),
+                                ('İndirimli paket: %d%s' % (len(r['kampanyali']), ornek(r['kampanyali'])))
+                                if r.get('indirim_kolonu') else 'Listede indirim kolonu yok: paket indirimleri '
+                                'değiştirilmedi.'), parent=self.p)
 
     def yedek_al(self):
         yol = self.ana.veri.yedek_al('elle')

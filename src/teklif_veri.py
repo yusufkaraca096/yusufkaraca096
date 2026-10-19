@@ -129,7 +129,8 @@ CREATE TABLE IF NOT EXISTS teklif (
 
 
 PAKET_KOLONLARI = ['kod', 'tur', 'ad', 'std_fiyat', 'ent_fiyat', 'kull_yuzde', 'ybh_yuzde', 'aciklama', 'urunler',
-                   'std_saat', 'ent_saat', 'aktif', 'zorunlu']
+                   'std_saat', 'ent_saat', 'aktif', 'zorunlu', 'kamp_yuzde', 'kamp_tutar', 'kamp_aciklama']
+KAMP_KOLONLARI = ('kamp_yuzde', 'kamp_tutar', 'kamp_aciklama')
 
 # ------------------------------------------------------------------ varsayilan kurallar (ornek; Veriler'den degisir)
 # hesap: PAKET_SAAT (paket adam/saatleri), KAYIT (kayit / p1 kayit-saat + p2 hazirlik), KULLANICI (tavan(kullanici /
@@ -284,6 +285,9 @@ class TeklifVeri:
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SEMA)
         self._kolon_ekle('paket', 'zorunlu', 'TEXT')
+        for kolon, tip in (('kamp_yuzde', 'REAL'), ('kamp_tutar', 'REAL'), ('kamp_aciklama', 'TEXT')):
+            self._kolon_ekle('paket', kolon, tip)
+        self._paket_kampanyalarini_tasi()
         self._kolon_ekle('kampanya', 'kosul', 'TEXT')
         for kolon in ('varsayilan', 'grup', 'aciklama'):
             self._kolon_ekle('kesif', kolon, 'TEXT')
@@ -299,6 +303,23 @@ class TeklifVeri:
         self.db.commit()
         if otomatik_yedek and not self.bugun_yedek_var_mi():
             self.yedek_al('otomatik')
+
+    def _paket_kampanyalarini_tasi(self):
+        """Onceki surumdeki ayri 'DIA Paket Kampanyalari' tablosu: kampanyalar paketin kendi kolonlarina tasinir."""
+        import fnmatch
+        satirlar = [dict(r) for r in self.db.execute('SELECT * FROM paket_kampanya WHERE aktif=1')]
+        if not satirlar:
+            return
+        kodlar = [r[0] for r in self.db.execute('SELECT kod FROM paket')]
+        for k in satirlar:
+            for desen in re.split(r'[,;\s]+', k.get('kodlar') or ''):
+                for kod in kodlar:
+                    if desen and fnmatch.fnmatchcase(kod.upper(), desen.upper()):
+                        self.db.execute('UPDATE paket SET kamp_yuzde=?, kamp_tutar=?, kamp_aciklama=? WHERE kod=? AND '
+                                        'COALESCE(kamp_yuzde, 0) = 0 AND COALESCE(kamp_tutar, 0) = 0',
+                                        (k.get('yuzde') or 0, k.get('tutar') or 0,
+                                         re.sub(r' - [^-]+$', '', k.get('ad') or '') or 'Kampanya', kod))
+        self.db.execute('DELETE FROM paket_kampanya')
 
     def _kolon_ekle(self, tablo, kolon, tip):
         if kolon not in [r[1] for r in self.db.execute('PRAGMA table_info(%s)' % tablo)]:
@@ -421,8 +442,6 @@ class TeklifVeri:
             'kampanyalar': self.kampanyalar(),
             'profiller': self.kesif_profilleri(),
             'senaryolar': self.senaryolar(),
-            'paket_kampanyalari': [dict(r) for r in self.db.execute(
-                'SELECT * FROM paket_kampanya WHERE aktif=1 ORDER BY ad')],
         }
         if gecmis:
             k['gecmis'] = self.gecmis_ozeti()
@@ -762,10 +781,17 @@ class TeklifVeri:
         wb = load_workbook(yol, data_only=True)
         self.yedek_al('ice_aktarma_oncesi')
         rapor = []
-        if 'PaketListesi' not in wb.sheetnames:
+        sayfa = next((ad for ad in wb.sheetnames if ad.strip().lower() == 'paketlistesi'), None)
+        if not sayfa:
             raise ValueError("Dosyada 'PaketListesi' sayfasi yok")
 
-        ws = wb['PaketListesi']
+        ws = wb[sayfa]
+        # Liste Excel'inde indirim kolonlari (Kamp. Ind. % / Tutar / Aciklama) varsa okunur
+        kamp_kol = {}
+        for c in range(1, ws.max_column + 1):
+            k = _KAMP_BASLIK.get(re.sub(r'[\s.:]+', '', _katla(ws.cell(1, c).value)))
+            if k and k not in kamp_kol:
+                kamp_kol[k] = c
         paketler = {}
         satir_kod = {}
         for r in range(2, ws.max_row + 1):
@@ -779,7 +805,15 @@ class TeklifVeri:
                 'kull_yuzde': _sayi(ws.cell(r, 6).value), 'ybh_yuzde': _sayi(ws.cell(r, 7).value),
                 'aciklama': _metin(ws.cell(r, 8).value), 'urunler': _metin(ws.cell(r, 9).value),
                 'zorunlu': zorunlu_metni(ws.cell(r, 10).value), 'std_saat': 0.0, 'ent_saat': 0.0, 'aktif': 1}
+            if kamp_kol:
+                p = paketler[kod]
+                p['kamp_yuzde'] = _sayi(ws.cell(r, kamp_kol['kamp_yuzde']).value) if 'kamp_yuzde' in kamp_kol else 0
+                p['kamp_tutar'] = _sayi(ws.cell(r, kamp_kol['kamp_tutar']).value) if 'kamp_tutar' in kamp_kol else 0
+                aciklama = _metin(ws.cell(r, kamp_kol['kamp_aciklama']).value) if 'kamp_aciklama' in kamp_kol else ''
+                p['kamp_aciklama'] = (aciklama or 'Kampanya') if p['kamp_yuzde'] or p['kamp_tutar'] else ''
         rapor.append('%d paket' % len(paketler))
+        if kamp_kol:
+            rapor.append('%d pakette indirim' % sum(1 for p in paketler.values() if p.get('kamp_aciklama')))
 
         saatli = set()
         if 'ADAM SAAT' in wb.sheetnames:
@@ -802,6 +836,9 @@ class TeklifVeri:
         korunan = 0
         for kod, p in paketler.items():
             e = eski_paketler.get(kod)
+            if not kamp_kol:            # dosyada indirim kolonu yoksa elle girilen paket indirimi korunur
+                for k in KAMP_KOLONLARI:
+                    p[k] = (e or {}).get(k)
             if kod not in saatli and e and (e.get('std_saat') or e.get('ent_saat')):
                 p['std_saat'], p['ent_saat'] = e.get('std_saat') or 0, e.get('ent_saat') or 0
                 korunan += 1
@@ -902,8 +939,8 @@ class TeklifVeri:
                      'ent. fiyat': 'ent_fiyat', 'ent fiyat': 'ent_fiyat', 'enterprise fiyat': 'ent_fiyat',
                      'kullanıcı %': 'kull_yuzde', 'kullanici %': 'kull_yuzde', 'ybh %': 'ybh_yuzde',
                      'açıklama': 'aciklama', 'aciklama': 'aciklama', 'ürünler': 'urunler', 'urunler': 'urunler',
-                     'tür': 'tur', 'tur': 'tur', 'grup': 'tur', 'zorunlu': 'zorunlu'}
-        yeni, kamp = {}, {}
+                     'tür': 'tur', 'türü': 'tur', 'tur': 'tur', 'turu': 'tur', 'grup': 'tur', 'zorunlu': 'zorunlu'}
+        yeni, kamp, kamp_kolonu = {}, {}, False
         for ws in wb.worksheets:
             satirlar = list(ws.iter_rows(values_only=True))
             for i, satir in enumerate(satirlar[:20]):
@@ -919,6 +956,7 @@ class TeklifVeri:
                         k = _KAMP_BASLIK.get(re.sub(r'[\s.:]+', '', _katla(v)))
                         if k and k not in eslesme:
                             eslesme[k] = c
+                    kamp_kolonu = 'kamp_yuzde' in eslesme or 'kamp_tutar' in eslesme
                     for s in satirlar[i + 1:]:
                         kod = _metin(s[eslesme['kod']]) if eslesme['kod'] < len(s) else ''
                         if not kod:
@@ -929,9 +967,14 @@ class TeklifVeri:
                                      'kull_yuzde': _sayi(al('kull_yuzde')), 'ybh_yuzde': _sayi(al('ybh_yuzde')),
                                      'aciklama': _metin(al('aciklama')), 'urunler': _metin(al('urunler')),
                                      'zorunlu': zorunlu_metni(al('zorunlu'))}
-                        if _sayi(al('kamp_yuzde')) or _sayi(al('kamp_tutar')):
-                            kamp[kod] = {'yuzde': _sayi(al('kamp_yuzde')), 'tutar': _sayi(al('kamp_tutar')),
-                                         'aciklama': _metin(al('kamp_aciklama')) or 'DIA kampanyası'}
+                        if kamp_kolonu:
+                            yeni[kod].update(kamp_yuzde=_sayi(al('kamp_yuzde')), kamp_tutar=_sayi(al('kamp_tutar')),
+                                             kamp_aciklama=_metin(al('kamp_aciklama')))
+                            if yeni[kod]['kamp_yuzde'] or yeni[kod]['kamp_tutar']:
+                                yeni[kod]['kamp_aciklama'] = yeni[kod]['kamp_aciklama'] or 'Kampanya'
+                                kamp[kod] = True
+                            else:
+                                yeni[kod]['kamp_aciklama'] = ''
                     break
             if yeni:
                 break
@@ -950,23 +993,25 @@ class TeklifVeri:
                 p['std_saat'] = eski.get(kod, {}).get('std_saat', 0)
                 p['ent_saat'] = eski.get(kod, {}).get('ent_saat', 0)
                 p['aktif'] = 1
+                if not kamp_kolonu:          # listede indirim kolonu yoksa elle girilen indirim korunur
+                    for k in KAMP_KOLONLARI:
+                        p[k] = eski.get(kod, {}).get(k)
                 self._paket_yaz(p)
             self.db.execute('INSERT OR REPLACE INTO ayar VALUES (?, ?)',
                             ('fiyat_listesi_tarihi', datetime.now().strftime('%Y-%m-%d')))
-            # Listedeki DIA kampanyalari (Kamp. Ind. % / Tutar): onceki listeden gelenlerin yerine yazilir
-            self.db.execute("DELETE FROM paket_kampanya WHERE kaynak='DIA_LISTE'")
-            for kod, k in kamp.items():
-                self.db.execute("INSERT OR REPLACE INTO paket_kampanya (ad, kodlar, yuzde, tutar, baslangic, bitis, "
-                                "aktif, kaynak) VALUES (?,?,?,?,'','',1,'DIA_LISTE')",
-                                ('%s - %s' % (k['aciklama'], kod), kod, k['yuzde'], k['tutar']))
         return {'toplam': len(yeni), 'fiyati_degisen': degisen, 'yeni': eklenen, 'listeden_kalkan': kalkan,
-                'kampanyali': sorted(kamp)}
+                'kampanyali': sorted(kamp), 'indirim_kolonu': kamp_kolonu}
 
 
 _KAMP_BASLIK = {'kampind%': 'kamp_yuzde', 'kampindirim%': 'kamp_yuzde', 'kampanyaindirim%': 'kamp_yuzde',
-                'kampanya%': 'kamp_yuzde', 'kampindtutar': 'kamp_tutar', 'kampindirimtutari': 'kamp_tutar',
-                'kampanyaindirimtutari': 'kamp_tutar', 'kampanyatutari': 'kamp_tutar',
-                'kampaciklama': 'kamp_aciklama', 'kampanyaaciklama': 'kamp_aciklama', 'kampanyaadi': 'kamp_aciklama'}
+                'kampanya%': 'kamp_yuzde', 'indirim%': 'kamp_yuzde', 'ind%': 'kamp_yuzde', 'iskonto%': 'kamp_yuzde',
+                'indirimyuzde': 'kamp_yuzde', 'indirimorani': 'kamp_yuzde',
+                'kampindtutar': 'kamp_tutar', 'kampindirimtutari': 'kamp_tutar', 'kampindirimtutar': 'kamp_tutar',
+                'kampanyaindirimtutari': 'kamp_tutar', 'kampanyatutari': 'kamp_tutar', 'indirimtutari': 'kamp_tutar',
+                'indirimtutar': 'kamp_tutar', 'indtutar': 'kamp_tutar', 'indtutari': 'kamp_tutar',
+                'iskontotutari': 'kamp_tutar',
+                'kampaciklama': 'kamp_aciklama', 'kampanyaaciklama': 'kamp_aciklama', 'kampanyaadi': 'kamp_aciklama',
+                'kampanya': 'kamp_aciklama', 'indirimaciklama': 'kamp_aciklama', 'indirimaciklamasi': 'kamp_aciklama'}
 
 
 def _katla(x):

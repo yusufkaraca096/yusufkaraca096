@@ -76,7 +76,6 @@ VARSAYILAN_KURALLAR = {
     'hizmetler': [{'kod': 'kurulum', 'ad': 'Kurulum ve parametre ayarları', 'hesap': 'PAKET_SAAT', 'p1': 0, 'p2': 0,
                    'carpan': 1, 'kapsam': ''}],
     'sorular': [],
-    'paket_kampanyalari': [],
     'odeme': [{'ad': 'Peşin', 'tur': 'PESIN', 'taksit': 1, 'indirim': 5, 'musteriye_goster': 1},
               {'ad': '2 Taksit', 'tur': 'TAKSIT', 'taksit': 2, 'musteriye_goster': 1},
               {'ad': '3 Taksit', 'tur': 'TAKSIT', 'taksit': 3, 'musteriye_goster': 1},
@@ -193,45 +192,32 @@ def kullanici_sayisi(paket, masaustu, mobil):
     return 1
 
 
-def satir_hesapla(paket, tip, adet, ind_yuzde, kdv, saat=None, ind_tutar=0, kamp=None):
+def satir_hesapla(paket, tip, adet, ind_yuzde, kdv, saat=None, ind_tutar=0, kamp_aciklama=''):
     birim = birim_fiyat(paket, tip)
     kull = float(paket.get('kull_yuzde') or 0)
     toplam = 0.0 if adet <= 0 else birim + (adet - 1) * birim * kull / 100
-    # 1) DIA paket kampanyasi (Kamp. Ind. % / Tutar) liste toplamindan duser
-    kamp_ind = 0.0
-    if kamp and toplam:
-        kamp_ind = min(toplam * _f(kamp.get('yuzde')) / 100 + _f(kamp.get('tutar')), toplam)
-    # 2) Elle indirim = yuzde + sabit tutar, kampanyali tutar uzerinden; KDV ve tum toplamlar net uzerinden
-    kalan = toplam - kamp_ind
-    elle_ind = min(kalan * float(ind_yuzde or 0) / 100 + float(ind_tutar or 0), kalan)
-    indirim = kamp_ind + elle_ind
+    # Indirim = yuzde + sabit tutar; ikisi de satir NET'inden duser, KDV ve tum toplamlar net uzerinden.
+    # Satirda kampanya aciklamasi varsa (DIA listesinden gelen paket indirimi) indirim DIA kampanyasi sayilir.
+    indirim = min(toplam * float(ind_yuzde or 0) / 100 + float(ind_tutar or 0), toplam)
     net = toplam - indirim
+    kamp_ind = indirim if kamp_aciklama else 0.0
     tablo_saat = float(paket.get('ent_saat' if tip == 'ENTERPRISE' else 'std_saat') or 0)
     saat = tablo_saat if saat in (None, '') else float(saat)
     return {'kod': paket['kod'], 'ad': paket.get('ad', ''), 'tur': paket.get('tur', ''), 'adet': adet,
             'aciklama': paket.get('aciklama') or '', 'urunler': paket.get('urunler') or '',
             'birim': _r(birim), 'kull_yuzde': kull, 'toplam': _r(toplam), 'ind_yuzde': float(ind_yuzde or 0),
-            'ind_tutar': float(ind_tutar or 0), 'kamp_ad': (kamp or {}).get('ad', '') if kamp_ind else '',
-            'kamp_indirim': _r(kamp_ind), 'elle_indirim': _r(elle_ind),
+            'ind_tutar': float(ind_tutar or 0), 'kamp_ad': kamp_aciklama if indirim else '',
+            'kamp_indirim': _r(kamp_ind), 'elle_indirim': _r(indirim - kamp_ind),
             'indirim': _r(indirim), 'net': _r(net), 'kdv': _r(net * kdv / 100), 'dahil': _r(net * (1 + kdv / 100)),
             'saat': saat, 'tablo_saat': tablo_saat}
 
 
-def paket_kampanyasi_bul(kod, kampanyalar, tarih):
-    """Koda uyan, aktif ve tarihi gecerli ilk DIA paket kampanyasi. kodlar: 'M550_*, P12_PRKN_PRO' (* joker)."""
-    import fnmatch
-    gun = tarih.strftime('%Y-%m-%d') if hasattr(tarih, 'strftime') else str(tarih or '')[:10]
-    for k in kampanyalar or []:
-        if not int(_f(k.get('aktif'), 1)):
-            continue
-        if k.get('baslangic') and gun and gun < str(k['baslangic'])[:10]:
-            continue
-        if k.get('bitis') and gun and gun > str(k['bitis'])[:10]:
-            continue
-        for desen in re.split(r'[,;\s]+', str(k.get('kodlar') or '')):
-            if desen and fnmatch.fnmatchcase(katla(kod), katla(desen)):
-                return k
-    return None
+def paket_indirimi(paket):
+    """Paketin (DIA listesinden gelen / elle girilen) kampanya indirimi: teklife eklenirken satira yazilir."""
+    yuzde, tutar = _f(paket.get('kamp_yuzde')), _f(paket.get('kamp_tutar'))
+    if not (yuzde or tutar):
+        return None
+    return {'ind_yuzde': yuzde, 'ind_tutar': tutar, 'kamp_aciklama': paket.get('kamp_aciklama') or 'Kampanya'}
 
 
 def dia_ozeti(satirlar, paketler, tip, ybh):
@@ -1174,9 +1160,8 @@ def hesapla(girdi, paketler, ayar, sabit_fiyatlar=None, rakipler=None, kurallar=
             continue
         adet = k.get('adet')
         adet = kullanici_sayisi(p, masaustu, mobil) if adet in (None, '') else int(adet)
-        kamp = None if k.get('kamp_kapali') else paket_kampanyasi_bul(p['kod'], kurallar.get('paket_kampanyalari'),
-                                                                       _tarih(girdi.get('tarih')))
-        satir = satir_hesapla(p, tip, adet, k.get('ind_yuzde', 0), kdv, k.get('saat'), k.get('ind_tutar', 0), kamp)
+        satir = satir_hesapla(p, tip, adet, k.get('ind_yuzde', 0), kdv, k.get('saat'), k.get('ind_tutar', 0),
+                              k.get('kamp_aciklama') or '')
         satir['sira'] = sira     # formdaki kalem sirasi (bilinmeyen kod atlaninca kaymasin)
         satirlar.append(satir)
 

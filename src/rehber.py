@@ -501,15 +501,18 @@ def bolumler():
             'Revizyon: RT-2026-0001 → RT-2026-0001-R1; PDF başlığında "Revizyon 1" yazar, kayıtta önceki '
             'sürümle genel toplam farkı gösterilir.',
         ]),
-        ('h', 'DİA paket kampanyaları ve DİA ekranıyla karşılaştırma'),
+        ('h', 'DİA paket indirimleri ve DİA ekranıyla karşılaştırma'),
         ('madde', [
-            'DİA\'nın paket bazlı kampanyaları (ör. "Ekim 2026 E-Fatura" 7.800 TL) Veriler > DİA Paket Kampanyaları\'na '
-            'girilir: paket kodları (virgülle, * joker: M550_*), İnd. % veya İnd. Tutar, başlangıç-bitiş tarihi.',
-            'DİA fiyat listesi Excel\'inde "Kamp.İnd.%", "Kamp.İnd.Tutar", "Kamp.Açıklama" kolonları varsa '
-            '"DIA Fiyat Listesini Güncelle" bunları kendiliğinden kampanya olarak alır.',
-            'Teklifte kampanya satırın "DİA Kamp. İnd." kolonunda görünür ve liste tutarından düşer; elle İnd. % / '
-            'İnd. Tutar kampanyalı tutar üzerinden uygulanır. Kolona çift tıklayınca o satırda kampanya kapanır/açılır. '
-            'DİA kampanyası sizin "toplam indirim" sınırınıza sayılmaz.',
+            'Paket indirimi paketin kendisindedir: Veriler > Paketler / Adam-Saat sekmesinde Kamp. İnd. %, Kamp. İnd. '
+            'Tutar ve Kamp. Açıklama kolonları (çift tıklayıp elle de girebilirsiniz).',
+            'Her ay DİA paket listesi Excel\'ini "DIA Fiyat Listesini Güncelle" ile aktarın. Listede indirim kolonları '
+            'varsa (başlık örnekleri: "İndirim %", "İndirim Tutarı", "Kampanya" veya "Kamp.İnd.%", "Kamp.İnd.Tutar", '
+            '"Kamp.Açıklama") paketlerin indirimi o aya göre yenilenir; 0 olanların indirimi kalkar. Listede indirim '
+            'kolonu yoksa paketlere elle girdiğiniz indirimler korunur. Adam/saatler her durumda korunur.',
+            'Teklife paket eklenince indirimi kendiliğinden satırın İnd. % / İnd. Tutar kolonlarına yazılır ve '
+            '"Kamp. Açıklama" kolonuna kampanya adı gelir (DİA üye ekranındaki gibi tek yerde). Tutarı satırda '
+            'değiştirebilirsiniz. Kamp. Açıklama doluysa o indirim DİA kampanyası sayılır ve sizin "toplam indirim" '
+            'sınırınıza girmez; açıklamayı silerseniz sizin indiriminiz sayılır.',
             'Ekranın altındaki mavi satır DİA üye ekranıyla aynı rakamları verir: Üyelik Giriş Tutarı (lisans net), '
             'Ek +1 Masaüstü / Mobil (birim × Kull. %), Yıllık Bulut Hizmet Bedeli (liste × YBH %). Örnek: Perakende '
             'Pro + Genel Muhasebe + POS 1 + POS 1+14 + E-Fatura (−7.800) → 297.900 / 17.100 / 99.300.',

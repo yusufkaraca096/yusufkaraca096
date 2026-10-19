@@ -9,7 +9,7 @@ from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 import teklif_cikti  # noqa: E402
-from teklif_hesap import hesapla, ybh_hesapla, kademe_katsayi, kod_listesi_coz, sayi_coz, paket_kampanyasi_bul  # noqa: E402,E501
+from teklif_hesap import hesapla, ybh_hesapla, kademe_katsayi, kod_listesi_coz, sayi_coz  # noqa: E402
 from teklif_veri import TeklifVeri, AYAR_VARSAYILAN, varsayilan_klasor, veri_klasoru_degistir  # noqa: E402
 
 
@@ -495,7 +495,8 @@ class KodYapistirTest(unittest.TestCase):
 
 class DiaKampanyaTest(unittest.TestCase):
     """Kullanicinin DIA uye ekrani: 5 paket, E-Fatura'da 'Ekim 2026 E-Fatura' kampanyasi 7.800 TL.
-    DIA: Uyelik giris 297.900, Ek +1 masaustu 17.100, Yillik bulut hizmet bedeli 99.300."""
+    DIA: Uyelik giris 297.900, Ek +1 masaustu 17.100, Yillik bulut hizmet bedeli 99.300.
+    Kampanya paketin kendisinde (DIA listesinden), teklife eklenince satirin Ind. % / Ind. Tutar'ina yazilir."""
     P = {'P12_PRKN_PRO': ('Masaüstü', 67600, 15, 15), 'P71_GENMUH': ('Masaüstü', 46400, 15, 15),
          'M031_POS_01': ('Diğer', 20700, 0, 50), 'M031_POS_1_14': ('Diğer', 132000, 0, 50),
          'M550_EFATURA_EARSIV_01': ('Diğer', 39000, 0, 15)}
@@ -503,13 +504,24 @@ class DiaKampanyaTest(unittest.TestCase):
     def setUp(self):
         self.pk = {k: {'kod': k, 'tur': t, 'ad': k, 'std_fiyat': f, 'ent_fiyat': 0, 'kull_yuzde': ku, 'ybh_yuzde': y,
                        'std_saat': 1, 'ent_saat': 1, 'aktif': 1} for k, (t, f, ku, y) in self.P.items()}
+        self.pk['M550_EFATURA_EARSIV_01'].update(kamp_tutar=7800, kamp_aciklama='Ekim 2026 E-Fatura')
         self.ayar = dict(AYAR_VARSAYILAN, saatlik_ucret=100)
-        self.kamp = [{'ad': 'Ekim 2026 E-Fatura', 'kodlar': 'M550_*', 'yuzde': 0, 'tutar': 7800,
-                      'baslangic': '2026-10-01', 'bitis': '2026-10-31', 'aktif': 1}]
 
-    def h(self, tarih='2026-10-19', **k):
-        g = {'masaustu': 1, 'mobil': 0, 'tarih': tarih, 'kalemler': [dict({'kod': c}, **k.get(c, {})) for c in self.P]}
-        return hesapla(g, self.pk, self.ayar, kurallar={'paket_kampanyalari': self.kamp})
+    def kalem(self, kod, **k):
+        from teklif_hesap import paket_indirimi
+        kalem = dict({'kod': kod}, **(paket_indirimi(self.pk[kod]) or {}))
+        kalem.update(k)
+        return kalem
+
+    def h(self, **k):
+        g = {'masaustu': 1, 'mobil': 0, 'kalemler': [self.kalem(c, **k.get(c, {})) for c in self.P]}
+        return hesapla(g, self.pk, self.ayar)
+
+    def test_paket_indirimi_satira_yazilir(self):
+        from teklif_hesap import paket_indirimi
+        self.assertEqual(paket_indirimi(self.pk['M550_EFATURA_EARSIV_01']),
+                         {'ind_yuzde': 0, 'ind_tutar': 7800, 'kamp_aciklama': 'Ekim 2026 E-Fatura'})
+        self.assertIsNone(paket_indirimi(self.pk['P12_PRKN_PRO']))
 
     def test_dia_ekrani_ile_ayni(self):
         s = self.h()
@@ -519,14 +531,12 @@ class DiaKampanyaTest(unittest.TestCase):
         efat = s['satirlar'][-1]
         self.assertEqual((efat['kamp_ad'], efat['kamp_indirim'], efat['net']), ('Ekim 2026 E-Fatura', 7800, 31200))
 
-    def test_kampanya_tarih_disi_ve_kapali(self):
-        self.assertEqual(self.h(tarih='2026-11-01')['lisans']['net'], 305700)
-        self.assertEqual(self.h(M550_EFATURA_EARSIV_01={'kamp_kapali': True})['lisans']['net'], 305700)
-
-    def test_elle_indirim_kampanyadan_sonra(self):
-        s = self.h(M550_EFATURA_EARSIV_01={'ind_yuzde': 10, 'ind_tutar': 200})
+    def test_indirim_satirda_degistirilebilir(self):
+        s = self.h(M550_EFATURA_EARSIV_01={'ind_tutar': 0, 'ind_yuzde': 10})
         x = s['satirlar'][-1]
-        self.assertEqual((x['kamp_indirim'], x['elle_indirim'], x['net']), (7800, 3320, 27880))   # 31200*%10+200
+        self.assertEqual((x['indirim'], x['net'], x['kamp_indirim']), (3900, 35100, 3900))
+        s = self.h(M550_EFATURA_EARSIV_01={'kamp_aciklama': ''})       # aciklama silinirse bizim indirimimiz sayilir
+        self.assertEqual((s['satirlar'][-1]['kamp_indirim'], s['satirlar'][-1]['elle_indirim']), (0, 7800))
 
     def test_dia_kampanyasi_bizim_indirim_sayilmaz(self):
         self.ayar['max_toplam_indirim'] = 1
@@ -538,12 +548,6 @@ class DiaKampanyaTest(unittest.TestCase):
         s = hesapla({'masaustu': 1, 'mobil': 0, 'kalemler': [{'kod': 'P12_PRKN_PRO'}]}, self.pk, self.ayar,
                     kurallar={'hizmetler': [{'kod': 'kurulum', 'ad': 'Kurulum', 'hesap': 'PAKET_SAAT'}]})
         self.assertTrue([k for k in s['kontrol']['liste'] if 'Adam/saati 0' in k['mesaj']])
-
-    def test_kampanya_bul(self):
-        from datetime import date
-        self.assertIsNone(paket_kampanyasi_bul('P12_PRKN_PRO', self.kamp, date(2026, 10, 5)))
-        self.assertEqual(paket_kampanyasi_bul('m550_efatura_earsiv_01', self.kamp, date(2026, 10, 5))['tutar'], 7800)
-        self.assertIsNone(paket_kampanyasi_bul('M550_X', [dict(self.kamp[0], aktif=0)], date(2026, 10, 5)))
 
     def test_sayi_coz(self):
         for metin, beklenen in [('7.800', 7800), ('7 800,00', 7800), ('1.250.000', 1250000), ('20,5', 20.5),
@@ -564,21 +568,56 @@ class DiaListeIceAktarmaTest(unittest.TestCase):
         self.v.db.close()
         self.tmp.cleanup()
 
-    def test_fiyat_listesindeki_kampanya_kolonlari(self):
+    def liste(self, basliklar, satirlar, sayfa='Sheet'):
         from openpyxl import Workbook
         wb = Workbook()
         ws = wb.active
-        ws.append(['Tür', 'Kodu', 'Adı', 'Std. Fiyat', 'Ent. Fiyat', 'Kamp.İnd.%', 'Kamp.İnd.Tutar', 'Kamp.Açıklama'])
-        ws.append(['Masaüstü', 'MAS1', 'Muhasebe', 1100, 2000, 0, 0, ''])
-        ws.append(['Diğer', 'DIG1', 'E-Fatura', 800, 900, 0, 160, 'Ekim 2026 E-Fatura'])
+        ws.title = sayfa
+        ws.append(basliklar)
+        for r in satirlar:
+            ws.append(r)
         yol = os.path.join(self.d, 'dia.xlsx')
         wb.save(yol)
+        return yol
+
+    def test_aylik_listede_indirim_kolonlari_pakete_islenir(self):
+        yol = self.liste(['Tür', 'Kodu', 'Adı', 'Std. Fiyat', 'Ent. Fiyat', 'İndirim %', 'İndirim Tutarı', 'Kampanya'],
+                         [['Masaüstü', 'MAS1', 'Muhasebe', 1100, 2000, 10, 0, 'Ekim Muhasebe'],
+                          ['Diğer', 'DIG1', 'E-Fatura', 800, 900, 0, 160, 'Ekim 2026 E-Fatura']])
         sonuc = self.v.paket_listesi_guncelle(yol)
-        self.assertEqual(sonuc['kampanyali'], ['DIG1'])
-        k = self.v.kurallar(gecmis=False)['paket_kampanyalari']
-        self.assertEqual([(x['ad'], x['kodlar'], x['tutar'], x['kaynak']) for x in k],
-                         [('Ekim 2026 E-Fatura - DIG1', 'DIG1', 160, 'DIA_LISTE')])
-        self.assertEqual(self.v.paketler()['MAS1']['std_saat'], 2)     # adam/saat korunur
+        self.assertEqual((sonuc['kampanyali'], sonuc['indirim_kolonu']), (['DIG1', 'MAS1'], True))
+        p = self.v.paketler()
+        self.assertEqual((p['DIG1']['kamp_tutar'], p['DIG1']['kamp_aciklama']), (160, 'Ekim 2026 E-Fatura'))
+        self.assertEqual((p['MAS1']['kamp_yuzde'], p['MAS1']['std_saat']), (10, 2))     # adam/saat korunur
+        # Ertesi ay: kampanya bitti (0) -> indirim kalkar
+        yol = self.liste(['Tür', 'Kodu', 'Adı', 'Std. Fiyat', 'Ent. Fiyat', 'İndirim %', 'İndirim Tutarı'],
+                         [['Diğer', 'DIG1', 'E-Fatura', 800, 900, 0, 0]])
+        self.v.paket_listesi_guncelle(yol)
+        self.assertEqual((self.v.paketler()['DIG1']['kamp_tutar'], self.v.paketler()['DIG1']['kamp_aciklama']), (0, ''))
+
+    def test_indirim_kolonu_olmayan_liste_elle_indirimi_korur(self):
+        with self.v.db:
+            self.v.db.execute("UPDATE paket SET kamp_tutar=50, kamp_aciklama='Elle' WHERE kod='DIG1'")
+        # DIA'nin gercek listesi: basliklarda bosluklar, sayfa adi 'PaketListesi ' (sonda bosluk)
+        yol = self.liste(['Türü    ', 'Kodu             ', 'Adı      ', ' Std. Fiyat', ' Ent. Fiyat', ' Kullanıcı %',
+                          '     YBH %', 'Açıklama    ', 'Ürünler    ', 'Zorunlu     '],
+                         [['Diğer', 'DIG1', 'E-Fatura', 850, 900, 0, 20, 'x', 'y', '[]']], sayfa='PaketListesi ')
+        sonuc = self.v.paket_listesi_guncelle(yol)
+        p = self.v.paketler()['DIG1']
+        self.assertEqual((sonuc['indirim_kolonu'], p['std_fiyat'], p['kamp_tutar'], p['kamp_aciklama'], p['tur']),
+                         (False, 850, 50, 'Elle', 'Diğer'))
+        self.v.excelden_ice_aktar(yol)                  # motor ice aktarimi da sayfa adini bulur, indirimi korur
+        self.assertEqual(self.v.paketler()['DIG1']['kamp_tutar'], 50)
+
+    def test_eski_kampanya_tablosu_pakete_tasinir(self):
+        with self.v.db:
+            self.v.db.execute("INSERT INTO paket_kampanya (ad, kodlar, yuzde, tutar, aktif) VALUES "
+                              "('Ekim - DIG1', 'DIG*', 0, 160, 1)")
+        self.v.db.close()
+        self.v = TeklifVeri(os.path.join(self.d, 'teklif.db'))
+        p = self.v.paketler()['DIG1']
+        self.assertEqual((p['kamp_tutar'], p['kamp_aciklama']), (160, 'Ekim'))
+        self.assertFalse(self.v.db.execute('SELECT 1 FROM paket_kampanya').fetchone())
 
     def test_adam_saati_olmayan_excel_eski_saatleri_silmez(self):
         from openpyxl import load_workbook

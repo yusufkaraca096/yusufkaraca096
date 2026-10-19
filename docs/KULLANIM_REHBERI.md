@@ -1351,11 +1351,12 @@ DIA lisans + hizmet teklifi hazırlar; RACA_DIA_Teklif_Motoru.xlsx'in program ha
 1. Müşteri: ad, kullanıcı sayıları, yetkili / telefon / e-posta / VKN. Paket tipi eşiğe göre seçilir. Etiket (Ekonomik / Önerilen / Kapsamlı) alternatif tekliflerde kullanılır.
 2. 1) Paketler: + Paket Ekle ile arayın, ekleyin. Adet, İnd. %, İnd. Tutar, A/S kolonlarına çift tıklayıp değiştirin. Sabit kalemler, kampanya, maliyet ve bu teklife özel saat ücreti de burada.
 3. Kodla hızlı ekleme: "Kod:" kutusuna paket kodunu yazıp/yapıştırıp Enter. Birden çok kodu Excel'den veya bir listeden kopyalayıp "Panodan Yapıştır" (ya da paket listesinde Ctrl+V) ile tek seferde ekleyin. Alt alta, virgül/noktalı virgül/boşluk ile ayrılmış kodlar kabul edilir; büyük/küçük harf, Türkçe karakter ve - _ . farkı önemsizdir. "KOD 3" veya Excel'de kodun yanındaki hücre tam sayıysa adet olarak alınır. Bulunamayan, pasif ve teklifte zaten olan kodlar listelenir, eklenmez.
-4. 2) Keşif & Uyarlama: soruları cevaplayın. Sağdaki hizmet dökümü her kalemin saatini ve "neye göre" hesaplandığını gösterir. Saat kolonuna çift tıklayıp elle değiştirebilirsiniz (boş = öneri). Müşteri verisinden doldur: veri temizleme klasöründen cari/stok sayısını ve hata oranını alır. Şehir dışıysa yerinde gün ve kişi sayısını girin.
-5. 3) Ödeme / Taksit: her seçenekte müşterinin ödeyeceği, bankanın keseceği komisyon ve size kalan tutar. PDF kolonuna çift tıklayarak müşteriye hangi seçeneklerin sunulacağını belirleyin.
-6. 4) Bakım Anlaşması: önerilen paket ve hesabın dökümü; teklife eklenecek paketi seçin.
-7. 5) Satış Asistanı & Kontroller: tahmini kazanma ihtimali, öneriler ve kritik hatalar.
-8. Kaydet: numara verilir. Revizyon Kaydet: aynı teklifin -R1, -R2 sürümü (eskisi korunur). PDF / Excel: kritik hata varsa yönetici şifresi (tanımlıysa) veya onay istenir.
+4. Uyarlama bedeli: ekranın altındaki turuncu bantta (tıklayınca Keşif & Uyarlama dökümü açılır) ve PDF/Excel'de ayrı bölümde gösterilir. PDF'te bölüm başında açıklama metni (Ayarlar: uyarlama_aciklama), her hizmet kaleminin kapsamı, dayanağı (ör. "7 kullanıcı → 1 grup × 8 saat") ve hesabı (saat × saat ücreti), süre saat ve iş günü olarak (Ayarlar: is_gunu_saat), sonunda da vurgulu "UYARLAMA HİZMET BEDELİ" kutusu yer alır. Elle değiştirilen saat ve kalibrasyon gerekçeleri müşteriye gösterilmez.
+5. 2) Keşif & Uyarlama: soruları cevaplayın. Sağdaki hizmet dökümü her kalemin saatini ve "neye göre" hesaplandığını gösterir. Saat kolonuna çift tıklayıp elle değiştirebilirsiniz (boş = öneri). Müşteri verisinden doldur: veri temizleme klasöründen cari/stok sayısını ve hata oranını alır. Şehir dışıysa yerinde gün ve kişi sayısını girin.
+6. 3) Ödeme / Taksit: her seçenekte müşterinin ödeyeceği, bankanın keseceği komisyon ve size kalan tutar. PDF kolonuna çift tıklayarak müşteriye hangi seçeneklerin sunulacağını belirleyin.
+7. 4) Bakım Anlaşması: önerilen paket ve hesabın dökümü; teklife eklenecek paketi seçin.
+8. 5) Satış Asistanı & Kontroller: tahmini kazanma ihtimali, öneriler ve kritik hatalar.
+9. Kaydet: numara verilir. Revizyon Kaydet: aynı teklifin -R1, -R2 sürümü (eskisi korunur). PDF / Excel: kritik hata varsa yönetici şifresi (tanımlıysa) veya onay istenir.
 
 ### Uyarlama nasıl hesaplanır (hizmet dökümü)
 
@@ -1474,6 +1475,8 @@ Teklif Geçmişi penceresinde arama, Aç/Düzenle, Kopyala (aynı teklifi yeni n
 | tco_yil | 3 | Toplam sahip olma maliyeti tablosunun yıl sayısı |
 | ybh_baslangic_yili | 2 | DIA yıllık bakım (YBH) kaçıncı yıldan başlar |
 | kapsam_haric | Kapsam dışı talepler (özel rapor / ekran geliştirme, ek eğitim, ek yerinde destek vb.) saatlik ücret üzerinden ayrıca ücretlendirilir. | PDF'te uyarlama kapsamının altına yazılır |
+| uyarlama_aciklama | Uyarlama hizmeti; DİA'nın firmanızın iş yapış şekline göre kurulup ayarlanması, verilerinizin aktarılması, kullanıcılarınızın eğitilmesi ve canlıya geçişte yanınızda olunması için gereken danışmanlık çalışmasıdır. Bedel, aşağıdaki iş kalemlerinin tahmini süresi ile danışman saat ücretinin çarpımı üzerinden hesaplanmıştır. | PDF'te uyarlama bölümünün başına yazılan açıklama (boş = yazılmaz) |
+| is_gunu_saat | 8 | Uyarlama süresi PDF'te gün olarak da gösterilir: 1 iş günü = bu kadar saat (0 = gösterme) |
 
 ### Veri, yedek ve kayıp kayıt sorunu
 

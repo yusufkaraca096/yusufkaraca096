@@ -65,6 +65,12 @@ AYARLAR = [
     ('ybh_baslangic_yili', 2, 'DIA yıllık bakım (YBH) kaçıncı yıldan başlar'),
     ('kapsam_haric', 'Kapsam dışı talepler (özel rapor / ekran geliştirme, ek eğitim, ek yerinde destek vb.) '
                      'saatlik ücret üzerinden ayrıca ücretlendirilir.', 'PDF\'te uyarlama kapsamının altına yazılır'),
+    ('uyarlama_aciklama', 'Uyarlama hizmeti; DİA\'nın firmanızın iş yapış şekline göre kurulup ayarlanması, '
+                          'verilerinizin aktarılması, kullanıcılarınızın eğitilmesi ve canlıya geçişte yanınızda '
+                          'olunması için gereken danışmanlık çalışmasıdır. Bedel, aşağıdaki iş kalemlerinin tahmini '
+                          'süresi ile danışman saat ücretinin çarpımı üzerinden hesaplanmıştır.',
+     'PDF\'te uyarlama bölümünün başına yazılan açıklama (boş = yazılmaz)'),
+    ('is_gunu_saat', 8, 'Uyarlama süresi PDF\'te gün olarak da gösterilir: 1 iş günü = bu kadar saat (0 = gösterme)'),
 ]
 AYAR_VARSAYILAN = {a: v for a, v, _ in AYARLAR}
 SAYI_AYARLARI = {a for a, v, _ in AYARLAR if isinstance(v, (int, float))}

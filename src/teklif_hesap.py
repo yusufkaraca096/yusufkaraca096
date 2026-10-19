@@ -299,7 +299,7 @@ def hizmet_hesapla(satirlar, kullanici, cevaplar, hizmetler, sorular, elle=None)
         if k['hesap'] == 'YUZDE' and satirlar:
             k['taban'] = diger * k['p1'] / 100
             k['saat'] = round(k['taban'] * k['kats'] * k['carpan'], 1)
-            k['nedenler'].insert(0, 'Diğer hizmetlerin %%%g\'si (%g saat)' % (k['p1'], diger))
+            k['nedenler'].insert(0, 'Diğer hizmetler %g saat × %%%g' % (diger, k['p1']))
     for k in kalemler:
         if k['carpan'] != 1 and k['saat']:
             k['nedenler'].append('Kalibrasyon çarpanı ×%g (gerçekleşen saatlere göre)' % k['carpan'])

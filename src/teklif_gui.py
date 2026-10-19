@@ -430,6 +430,10 @@ class TeklifPenceresi:
         sag.pack(side=tk.LEFT, fill=tk.BOTH, padx=(6, 0))
         self.genel_lbl = tk.Label(sag, text='', bg=LACIVERT, fg='white', font=('Arial', 14, 'bold'), pady=6, padx=10)
         self.genel_lbl.pack(fill=tk.X)
+        self.uyarlama_lbl = tk.Label(sag, text='', bg='#e67e22', fg='white', font=('Arial', 12, 'bold'), pady=4,
+                                     padx=10, cursor='hand2')
+        self.uyarlama_lbl.pack(fill=tk.X, pady=(3, 0))
+        self.uyarlama_lbl.bind('<Button-1>', lambda e: self.nb.select(self.sekme_kesif))
         self.uyarlama_detay = tk.Label(sag, text='', bg='#f0f0f0', fg='#555', font=('Arial', 8), justify='left',
                                        wraplength=520)
         self.uyarlama_detay.pack(anchor='w')
@@ -526,7 +530,13 @@ class TeklifPenceresi:
         yaz('kampanya', -s['kampanya']['tutar'])
         yaz('net', s['net_toplam'])
         u = s['uyarlama']
-        self.uyarlama_detay.config(text='Uyarlama = lisans × %%%g (%s) + %g saat × %s (%s)%s' % (
+        gun_saat = float(self.ayar.get('is_gunu_saat') or 0)
+        saat_m = ('%g' % u['saat']).replace('.', ',')
+        gun_m = (' ≈ %s iş günü' % ('%g' % round(u['saat'] / gun_saat, 1)).replace('.', ',')) if gun_saat else ''
+        self.uyarlama_lbl.config(text='UYARLAMA HİZMET BEDELİ:  %s TL + KDV   (%s saat%s)' % (
+            para(u['net']), saat_m, gun_m))
+        self.uyarlama_detay.config(text='Uyarlama = lisans × %%%g (%s) + %g saat × %s (%s)%s   — döküm: Keşif & '
+                                        'Uyarlama sekmesi' % (
             self.ayar['lisans_yuzdesi'], para(u['lisans_payi']), u['saat'], para(u['saat_ucreti']),
             para(u['saat_bedeli']), ('   → ' + u['sinir'] + ' uygulandı') if u['sinir'] else ''))
         self.genel_lbl.config(text='GENEL TOPLAM (KDV Dahil):  %s TL' % para(s['genel_toplam']))

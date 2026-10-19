@@ -381,6 +381,12 @@ def bolumler():
             'ekleyin. Alt alta, virgül/noktalı virgül/boşluk ile ayrılmış kodlar kabul edilir; büyük/küçük harf, '
             'Türkçe karakter ve - _ . farkı önemsizdir. "KOD 3" veya Excel\'de kodun yanındaki hücre tam sayıysa '
             'adet olarak alınır. Bulunamayan, pasif ve teklifte zaten olan kodlar listelenir, eklenmez.',
+            'Uyarlama bedeli: ekranın altındaki turuncu bantta (tıklayınca Keşif & Uyarlama dökümü açılır) ve '
+            'PDF/Excel\'de ayrı bölümde gösterilir. PDF\'te bölüm başında açıklama metni (Ayarlar: '
+            'uyarlama_aciklama), her hizmet kaleminin kapsamı, dayanağı (ör. "7 kullanıcı → 1 grup × 8 saat") ve '
+            'hesabı (saat × saat ücreti), süre saat ve iş günü olarak (Ayarlar: is_gunu_saat), sonunda da vurgulu '
+            '"UYARLAMA HİZMET BEDELİ" kutusu yer alır. Elle değiştirilen saat ve kalibrasyon gerekçeleri müşteriye '
+            'gösterilmez.',
             '2) Keşif & Uyarlama: soruları cevaplayın. Sağdaki hizmet dökümü her kalemin saatini ve "neye göre" '
             'hesaplandığını gösterir. Saat kolonuna çift tıklayıp elle değiştirebilirsiniz (boş = öneri). Müşteri '
             'verisinden doldur: veri temizleme klasöründen cari/stok sayısını ve hata oranını alır. Şehir dışıysa '

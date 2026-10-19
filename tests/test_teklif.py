@@ -811,5 +811,99 @@ class GorunumDovizDilTest(unittest.TestCase):
             self.assertTrue(os.path.getsize(pdf) > 1000, ad)
 
 
+class SatisSureciTest(unittest.TestCase):
+    """Asama, takip, aktivite, gunluk isler, gecmisten ogrenme ve rapor."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = self.tmp.name
+        motor_excel(os.path.join(self.d, 'motor.xlsx'))
+        self.v = TeklifVeri(os.path.join(self.d, 'teklif.db'))
+        self.v.excelden_ice_aktar(os.path.join(self.d, 'motor.xlsx'))
+        self.v.ayar_yaz('hazirlayan_ad', 'Ayşe')
+
+    def tearDown(self):
+        self.v.db.close()
+        self.tmp.cleanup()
+
+    def kaydet(self, musteri, tarih, ind=0, bakim=''):
+        g = {'musteri': musteri, 'masaustu': 2, 'mobil': 0, 'tarih': tarih, 'kampanya': 'X', 'kampanya_yuzde': ind,
+             'kalemler': [{'kod': 'MAS1'}], 'bakim': bakim}
+        s = hesapla(g, self.v.paketler(), self.v.ayarlar(), kurallar=self.v.kurallar())
+        return self.v.teklif_kaydet(g, s), g, s
+
+    def test_kayitta_asama_takip_hazirlayan(self):
+        from datetime import datetime, timedelta
+        no, g, s = self.kaydet('A', '2026-01-10')
+        t = self.v.teklif_sureci(no)
+        self.assertEqual((t['asama'], t['takip_tarihi'], t['hazirlayan']), ('Teklif verildi', '2026-01-12', 'Ayşe'))
+        self.v.asama_yaz(no, 'Müzakere')
+        self.v.teklif_kaydet(dict(g, teklif_no=no), s, no)            # tekrar kayit sureci bozmaz
+        self.assertEqual(self.v.teklif_sureci(no)['asama'], 'Müzakere')
+        self.v.teklif_sonuc_yaz(no, 'KAZANDI')
+        t = self.v.teklif_sureci(no)
+        self.assertEqual(t['asama'], 'Kazandı')
+        self.assertEqual(t['takip_tarihi'], (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'))
+        self.assertEqual([a['tur'] for a in self.v.aktiviteler(no)], ['Sonuç', 'Aşama'])
+
+    def test_aktivite_ve_gunluk_isler(self):
+        no, _, _ = self.kaydet('Gecikmiş', '2026-01-01')
+        no2, _, _ = self.kaydet('İleri', '2026-01-01')
+        self.v.aktivite_ekle(no2, 'Arama', 'demo istendi', '2099-01-01')
+        isler = self.v.gunluk_isler('2026-01-05')
+        self.assertEqual([(x['no'], x['oncelik']) for x in isler if x['no'] == no], [(no, 0)])
+        self.assertIn('gecikti', isler[0]['is'])
+        self.assertNotIn(no2, [x['no'] for x in isler if x['is'].startswith('Takip')])
+        self.assertEqual(self.v.aktiviteler(no2)[0]['metin'], 'demo istendi')
+
+    def test_senaryolar_ve_sonraki_adim(self):
+        self.assertTrue([x for x in self.v.senaryolar() if x['tur'] == 'ASAMA' and x['baslik'] == 'Müzakere'])
+        g = {'musteri': 'B', 'masaustu': 2, 'mobil': 0, 'kalemler': [{'kod': 'MAS1'}], 'asama': 'Müzakere',
+             'teklif_no': 'X'}
+        a = hesapla(g, self.v.paketler(), dict(self.v.ayarlar(), max_toplam_indirim=20),
+                    kurallar=self.v.kurallar())['asistan']
+        self.assertEqual(a['asama'], 'Müzakere')
+        self.assertTrue(any('taban' in x for x in a['sonraki_adim']))
+        self.assertTrue(any('Rakip' in i[0] or 'Fiyat' in i[0] for i in a['itirazlar']))
+        sen = self.v.tablo_oku('senaryo')
+        for x in sen:
+            if x['baslik'] == 'Müzakere':
+                x['metin'] = 'Özel adım {hedef}'
+        self.v.tablo_yaz('senaryo', sen)
+        a = hesapla(g, self.v.paketler(), self.v.ayarlar(), kurallar=self.v.kurallar())['asistan']
+        self.assertTrue(any(x.startswith('Özel adım ') and '{' not in x for x in a['sonraki_adim']))
+
+    def test_gecmisten_ogrenme(self):
+        for i, (ind, sonuc, bakim) in enumerate([(0, 'KAYBETTİ', ''), (2, 'KAYBETTİ', ''), (3, 'KAYBETTİ', ''),
+                                                (6, 'KAZANDI', 'Standart'), (7, 'KAZANDI', 'Standart'),
+                                                (8, 'KAZANDI', 'Standart'), (9, 'KAYBETTİ', '')]):
+            no, _, _ = self.kaydet('M%d' % i, '2026-01-%02d' % (i + 1), ind, bakim)
+            self.v.teklif_sonuc_yaz(no, sonuc, 'fiyat yüksek' if sonuc == 'KAYBETTİ' else '')
+        g = {'musteri': 'M1', 'masaustu': 2, 'mobil': 0, 'kalemler': [{'kod': 'MAS1'}]}
+        og = hesapla(g, self.v.paketler(), self.v.ayarlar(), kurallar=self.v.kurallar())['asistan']['ogrenilen']
+        metin = ' '.join(og)
+        self.assertIn('daha önce 1 teklif', metin)
+        self.assertIn('%5-%10', metin)
+        self.assertIn('Bakım anlaşması eklenen tekliflerde kazanma %100', metin)
+        self.assertIn('"fiyat"', metin)
+
+    def test_rapor(self):
+        import teklif_rapor
+        a, _, _ = self.kaydet('A', '2026-02-01')
+        b, _, _ = self.kaydet('B', '2026-02-10')
+        self.kaydet('C', '2026-03-01')
+        self.v.teklif_sonuc_yaz(a, 'KAZANDI')
+        self.v.teklif_sonuc_yaz(b, 'KAYBETTİ', 'rakip')
+        r = teklif_rapor.rapor(teklif_rapor.filtrele(self.v.rapor_verisi(), '2026-01-01'),   # ESKI-1 haric
+                               self.v.aktiviteler())
+        self.assertEqual((r['kpi']['teklif'], r['kpi']['kazanilan'], r['kpi']['kaybedilen'], r['kpi']['kazanma_orani']),
+                         (3, 1, 1, 50))
+        self.assertEqual([x['ay'] for x in r['aylik']], ['2026-02', '2026-03'])
+        self.assertEqual(r['satisci'][0]['hazirlayan'], 'Ayşe')
+        self.assertEqual(r['nedenler'][0]['neden'], 'rakip')
+        self.assertEqual(r['paketler'][0], {'kod': 'MAS1', 'teklif': 3, 'kazanilan': 1})
+        self.assertEqual(len(teklif_rapor.filtrele(self.v.rapor_verisi(), '2026-02-05')), 2)
+        teklif_rapor.excel_yaz(os.path.join(self.d, 'r.xlsx'), r)
+
+
 if __name__ == '__main__':
     unittest.main()

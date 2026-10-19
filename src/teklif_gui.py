@@ -13,7 +13,8 @@ import teklif_cikti
 import teklif_tasarim
 from teklif_hesap import (hesapla, ybh_hesapla, kod_listesi_coz, sayi_coz, soru_etkisi, soru_etki_metni,
                           standart_cevaplar, kesif_ozeti, satis_brifingi, katla as _katla_h)
-from teklif_veri import TeklifVeri, AYARLAR, varsayilan_klasor, veri_klasoru_degistir
+from teklif_veri import (TeklifVeri, AYARLAR, ASAMALAR, AKTIVITE_TURLERI, varsayilan_klasor,
+                         veri_klasoru_degistir)
 
 LACIVERT = '#2c3e50'
 _KATLA = str.maketrans('çğıöşüÇĞİÖŞÜ', 'cgiosuCGIOSU')
@@ -30,6 +31,26 @@ def sayi_oku(metin, bos=None):
 
 def para(x):
     return teklif_cikti.para(x).replace(' TL', '')
+
+
+def tarih_goster(iso):
+    """'2026-10-21' -> '21.10.2026'"""
+    if not iso:
+        return ''
+    p = str(iso)[:10].split('-')
+    return '%s.%s.%s' % (p[2], p[1], p[0]) if len(p) == 3 else str(iso)
+
+
+def tarih_oku(metin):
+    """'21.10.2026' / '21/10/2026' / '2026-10-21' -> '2026-10-21'; gecersiz -> None"""
+    from datetime import datetime
+    metin = (metin or '').strip()
+    for bicim_ in ('%d.%m.%Y', '%d/%m/%Y', '%Y-%m-%d', '%d.%m.%y'):
+        try:
+            return datetime.strptime(metin, bicim_).strftime('%Y-%m-%d')
+        except ValueError:
+            continue
+    return None
 
 
 def dosya_ac(yol):
@@ -115,6 +136,10 @@ class TeklifPenceresi:
         self.yeni(sor=False)
         if self.veri.bos_mu():
             self.pencere.after(300, self.ilk_kurulum)
+        else:
+            isler = self.bugun_guncelle()
+            if int(self.ayar.get('acilista_gunluk') or 0) and any(x['oncelik'] <= 1 for x in isler):
+                self.pencere.after(500, lambda: GunlukPencere(self))
 
     def verileri_yenile(self):
         self.paketler = self.veri.paketler()
@@ -129,18 +154,21 @@ class TeklifPenceresi:
         p = self.pencere
         ust = tk.Frame(p, bg=LACIVERT, pady=6)
         ust.pack(fill=tk.X)
-        tk.Label(ust, text='💼 DIA TEKLİF MOTORU', font=('Arial', 14, 'bold'), bg=LACIVERT,
-                 fg='white').pack(side=tk.LEFT, padx=12)
-        self.no_lbl = tk.Label(ust, text='', font=('Arial', 11, 'bold'), bg=LACIVERT, fg='#f1c40f')
+        tk.Label(ust, text='💼 TEKLİF', font=('Arial', 14, 'bold'), bg=LACIVERT,
+                 fg='white').pack(side=tk.LEFT, padx=8)
+        self.no_lbl = tk.Label(ust, text='', font=('Arial', 10, 'bold'), bg=LACIVERT, fg='#f1c40f')
         self.no_lbl.pack(side=tk.LEFT, padx=10)
         for metin, komut, renk in [('⚙ Veriler', self.veriler_ac, '#7f8c8d'),
                                    ('🎨 Tasarım', self.tasarim_ac, '#b9770e'),
+                                   ('📊 Rapor', lambda: RaporPenceresi(self), '#117a65'),
                                    ('🔧 YBH', self.ybh_ac, '#8e44ad'),
                                    ('📂 Geçmiş', self.gecmis_ac, '#16a085'),
                                    ('📊 Excel', self.excel_kaydet, '#27ae60'), ('📄 PDF', self.pdf_kaydet, '#c0392b'),
-                                   ('📝 Revizyon Kaydet', self.revizyon_kaydet, '#5d6d7e'),
+                                   ('📝 Revizyon', self.revizyon_kaydet, '#5d6d7e'),
                                    ('💾 Kaydet', self.kaydet, '#2980b9'), ('＋ Yeni', self.yeni, '#d35400')]:
             _dugme(ust, metin, komut, renk).pack(side=tk.RIGHT, padx=2)
+        self.bugun_btn = _dugme(ust, '🔔 Bugün', lambda: GunlukPencere(self), '#7f8c8d')
+        self.bugun_btn.pack(side=tk.LEFT, padx=4, before=self.no_lbl)
 
         # Musteri bilgileri
         mf = tk.LabelFrame(p, text=' Müşteri ', font=('Arial', 10, 'bold'), bg='#f0f0f0', padx=8, pady=4)
@@ -542,6 +570,28 @@ class TeklifPenceresi:
         self.hazirlik_lbl.pack(anchor='w')
         sag = tk.Frame(f, bg='#f0f0f0')
         sag.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sf = tk.LabelFrame(sag, text=' Satış süreci (kaydedilmiş teklif) ', bg='#f0f0f0', padx=4)
+        sf.pack(fill=tk.X)
+        s1 = tk.Frame(sf, bg='#f0f0f0')
+        s1.pack(fill=tk.X)
+        tk.Label(s1, text='Aşama:', bg='#f0f0f0').pack(side=tk.LEFT)
+        self.asama_var = tk.StringVar(value='Fırsat')
+        cb = ttk.Combobox(s1, textvariable=self.asama_var, values=ASAMALAR, state='readonly', width=14)
+        cb.pack(side=tk.LEFT, padx=3)
+        cb.bind('<<ComboboxSelected>>', lambda e: self._asama_degisti())
+        tk.Label(s1, text='  Sonraki takip:', bg='#f0f0f0').pack(side=tk.LEFT)
+        self.takip_var = tk.StringVar()
+        tk.Entry(s1, textvariable=self.takip_var, width=11).pack(side=tk.LEFT, padx=3)
+        _dugme(s1, 'Kaydet', self._takip_kaydet, '#2980b9').pack(side=tk.LEFT, padx=1)
+        _dugme(s1, '+2 gün', lambda: self._takip_ertele(2), '#7f8c8d').pack(side=tk.LEFT, padx=1)
+        _dugme(s1, '+7 gün', lambda: self._takip_ertele(7), '#7f8c8d').pack(side=tk.LEFT, padx=1)
+        _dugme(s1, '＋ Görüşme / aktivite ekle', self._aktivite_ekle, '#27ae60').pack(side=tk.LEFT, padx=8)
+        self.aktivite_tree = ttk.Treeview(sf, columns=('tarih', 'tur', 'metin', 'sonraki'), show='headings', height=3)
+        for k, b, w in [('tarih', 'Tarih', 120), ('tur', 'Tür', 80), ('metin', 'Not', 560), ('sonraki', 'Sonraki takip',
+                                                                                             100)]:
+            self.aktivite_tree.heading(k, text=b)
+            self.aktivite_tree.column(k, width=w)
+        self.aktivite_tree.pack(fill=tk.X, pady=2)
         dug = tk.Frame(sag, bg='#f0f0f0')
         dug.pack(fill=tk.X)
         _dugme(dug, '📋 Satış brifingini kopyala', self.brifing_kopyala, '#16a085').pack(side=tk.LEFT, pady=2)
@@ -661,6 +711,7 @@ class TeklifPenceresi:
                 'odeme_secimi': list(self.odeme_secimi) if self.odeme_secimi is not None else None,
                 'bakim': '' if bakim == 'Ekleme' else bakim, 'bakim_sun': self.bakim_sun.get(),
                 'tasarim': self.tasarim_var.get(), 'hizmet_metin': dict(self.hizmet_metin),
+                'asama': self.asama_var.get() if hasattr(self, 'asama_var') else None,
                 'doviz': self.doviz.get(), 'kur': sayi_oku(self.kur.get(), None),
                 'dil': 'EN' if self.dil.get() == 'English' else 'TR',
                 'revizyon_onceki': self.revizyon_onceki}
@@ -886,7 +937,16 @@ class TeklifPenceresi:
         t = self.asistan_txt
         t.config(state='normal')
         t.delete('1.0', 'end')
-        t.insert('end', 'Satış asistanı önerileri\n', 'baslik')
+        t.insert('end', 'Sonraki adımlar — aşama: %s\n' % a.get('asama', '-'), 'baslik')
+        for i, x in enumerate(a.get('sonraki_adim', []), 1):
+            t.insert('end', '%d. ' % i, 'ÖNERİ')
+            t.insert('end', x + '\n')
+        if a.get('ogrenilen'):
+            t.insert('end', '\nGeçmişten öğrenilenler\n', 'baslik')
+            for x in a['ogrenilen']:
+                t.insert('end', '◆ ', 'İYİ')
+                t.insert('end', x + '\n')
+        t.insert('end', '\nSatış asistanı önerileri\n', 'baslik')
         for o in a['oneriler']:
             t.insert('end', '● %s: ' % o['baslik'], o['seviye'])
             t.insert('end', o['mesaj'] + '\n')
@@ -992,6 +1052,65 @@ class TeklifPenceresi:
         _dugme(f, '✔ Kaydet', kaydet, '#27ae60').pack(side=tk.LEFT, padx=2)
         _dugme(f, '↺ Tanımlı ada dön', orijinal, '#7f8c8d').pack(side=tk.LEFT, padx=2)
         _dugme(f, 'Vazgeç', d.destroy, '#95a5a6').pack(side=tk.LEFT, padx=2)
+
+    # ------------------------------------------------------------ satis sureci
+    def _sureci_yukle(self):
+        if not hasattr(self, 'asama_var'):
+            return
+        bilgi = self.veri.teklif_sureci(self.teklif_no) if self.teklif_no else None
+        self.asama_var.set((bilgi or {}).get('asama') or ('Teklif verildi' if bilgi else 'Fırsat'))
+        self.takip_var.set(tarih_goster((bilgi or {}).get('takip_tarihi')))
+        self.aktivite_tree.delete(*self.aktivite_tree.get_children())
+        if self.teklif_no:
+            for a in self.veri.aktiviteler(self.teklif_no):
+                self.aktivite_tree.insert('', 'end', values=(a['tarih'], a['tur'], a['metin'],
+                                                             tarih_goster(a['sonraki_tarih'])))
+
+    def _kayitli_mi(self):
+        if not self.teklif_no:
+            messagebox.showinfo('Satış süreci', 'Önce teklifi kaydedin.', parent=self.pencere)
+            return False
+        return True
+
+    def _asama_degisti(self):
+        if self.teklif_no:
+            neden = ''
+            if self.asama_var.get() == 'Kaybetti':
+                neden = simpledialog.askstring('Kayıp nedeni', 'Neden kaybedildi? (fiyat, rakip, erteleme ...)',
+                                               parent=self.pencere) or ''
+                self.veri.teklif_sonuc_yaz(self.teklif_no, 'KAYBETTİ', neden)
+            else:
+                self.veri.asama_yaz(self.teklif_no, self.asama_var.get())
+            self._sureci_yukle()
+            self.bugun_guncelle()
+        self.hesapla()
+
+    def _takip_kaydet(self):
+        if self._kayitli_mi():
+            tarih = tarih_oku(self.takip_var.get())
+            if self.takip_var.get().strip() and not tarih:
+                messagebox.showwarning('Tarih', 'Tarihi GG.AA.YYYY olarak yazın.', parent=self.pencere)
+                return
+            self.veri.takip_yaz(self.teklif_no, tarih)
+            self.bugun_guncelle()
+            self.durum_lbl.config(text='Takip tarihi kaydedildi')
+
+    def _takip_ertele(self, gun):
+        from datetime import datetime, timedelta
+        if self._kayitli_mi():
+            self.takip_var.set((datetime.now() + timedelta(days=gun)).strftime('%d.%m.%Y'))
+            self._takip_kaydet()
+
+    def _aktivite_ekle(self):
+        if self._kayitli_mi():
+            AktiviteDiyalogu(self.pencere, self.veri, self.teklif_no, self.asama_var.get(),
+                             lambda: (self._sureci_yukle(), self.bugun_guncelle(), self.hesapla()))
+
+    def bugun_guncelle(self):
+        isler = self.veri.gunluk_isler()
+        acil = sum(1 for x in isler if x['oncelik'] <= 1)
+        self.bugun_btn.config(text='🔔 Bugün (%d)' % len(isler), bg='#c0392b' if acil else '#7f8c8d')
+        return isler
 
     def brifing_kopyala(self):
         if not self.sonuc:
@@ -1193,6 +1312,7 @@ class TeklifPenceresi:
                 v.set('' if c in (None, '') else (c if tur == 'SECIM' else '%g' % c))
         self.hizmet_elle = dict(girdi.get('hizmet_elle') or {})
         self.hizmet_metin = dict(girdi.get('hizmet_metin') or {})
+        self._sureci_yukle()
         self.doviz.set(girdi.get('doviz') or 'TL')
         self.kur.set('' if not girdi.get('kur') else '%g' % girdi['kur'])
         self.dil.set('English' if girdi.get('dil') == 'EN' else 'Türkçe')
@@ -1222,6 +1342,8 @@ class TeklifPenceresi:
             g['tarih'] = self.tarih = datetime.now().strftime('%Y-%m-%d')
         self.teklif_no = self.veri.teklif_kaydet(g, self.sonuc, no or self.teklif_no)
         self.no_lbl.config(text='Teklif No: ' + self.teklif_no + '  ✔ kaydedildi')
+        self._sureci_yukle()
+        self.bugun_guncelle()
         if not sessiz:
             messagebox.showinfo('Kaydedildi', self.teklif_no + ' teklif geçmişine kaydedildi.', parent=self.pencere)
         return self.teklif_no
@@ -1440,9 +1562,10 @@ class GecmisPenceresi:
                                    ('📈 Tahmin / Gerçek Raporu', self.tahmin_raporu, '#2471a3')]:
             _dugme(ust2, metin, komut, renk).pack(side=tk.LEFT, padx=2)
         tk.Label(ust2, text='  (Karşılaştırma için Ctrl ile 2-4 teklif seçin)', fg='#555').pack(side=tk.LEFT)
-        kol = [('no', 'Teklif No', 120), ('tarih', 'Tarih', 85), ('musteri', 'Müşteri', 260), ('paket_tipi', 'Paket', 90),
-               ('kullanici', 'Kullanıcı', 140), ('net', 'Net (KDV Hr.)', 110), ('genel_toplam', 'KDV Dahil', 110),
-               ('kampanya', 'Kampanya', 100), ('sonuc', 'Sonuç', 85), ('red_nedeni', 'Red Nedeni', 160)]
+        kol = [('no', 'Teklif No', 120), ('tarih', 'Tarih', 85), ('musteri', 'Müşteri', 230), ('paket_tipi', 'Paket', 85),
+               ('net', 'Net (KDV Hr.)', 105), ('genel_toplam', 'KDV Dahil', 105), ('asama', 'Aşama', 95),
+               ('takip_tarihi', 'Takip', 85), ('olasilik', 'Olasılık %', 70), ('hazirlayan', 'Hazırlayan', 110),
+               ('sonuc', 'Sonuç', 80), ('red_nedeni', 'Red Nedeni', 140)]
         self.kol = kol
         self.tree = ttk.Treeview(self.p, columns=[k for k, _, _ in kol], show='headings', selectmode='extended')
         for k, b, w in kol:
@@ -1461,7 +1584,8 @@ class GecmisPenceresi:
         liste = self.ana.veri.teklifler(self.ara.get().strip())
         for t in liste:
             self.tree.insert('', 'end', iid=t['no'], tags=(t['sonuc'],), values=[
-                para(t[k]) if k in ('net', 'genel_toplam') else (t[k] or '') for k, _, _ in self.kol])
+                para(t[k]) if k in ('net', 'genel_toplam') else tarih_goster(t[k]) if k == 'takip_tarihi' else
+                ('' if t[k] is None else t[k]) for k, _, _ in self.kol])
         kaz = sum(1 for t in liste if t['sonuc'] == 'KAZANDI')
         kay = sum(1 for t in liste if t['sonuc'] == 'KAYBETTİ')
         oran = '%%%d' % round(kaz * 100 / (kaz + kay)) if kaz + kay else '-'
@@ -1505,6 +1629,7 @@ class GecmisPenceresi:
                                            parent=self.p) or ''
         self.ana.veri.teklif_sonuc_yaz(no, deger, neden)
         self.doldur()
+        self.ana.bugun_guncelle()
 
     def sil(self):
         no = self._secili()
@@ -1626,6 +1751,10 @@ class VeriPenceresi:
             ('yuzde', 'İnd. %', 70, True), ('tutar', 'İnd. Tutar', 90, True),
             ('baslangic', 'Başlangıç (YYYY-AA-GG)', 140, True), ('bitis', 'Bitiş (YYYY-AA-GG)', 130, True),
             ('aktif', 'Aktif', 50, True), ('kaynak', 'Kaynak', 90, False)]),
+        ('senaryo', '  Satış Senaryoları  ', [
+            ('baslik', 'Başlık (aşama adı / itiraz)', 200, True), ('tur', 'Tür (ASAMA / ITIRAZ / TAVIZ)', 170, True),
+            ('metin', 'Metin (satır satır; {saat} {gun} {dokum} {hedef} {taban} {gecerlilik} {bakim} {rakip_ort})',
+             640, True), ('sira', 'Sıra', 50, True), ('aktif', 'Aktif', 50, True)]),
         ('rakip', '  Rakipler  ', [('firma', 'Firma', 200, True), ('saat', 'Adam/Saat', 100, True),
                                    ('ucret', 'Saatlik Ücret', 130, True)]),
         ('paket', '  Paketler / Adam-Saat  ', [
@@ -1754,7 +1883,8 @@ class VeriPenceresi:
             tk.Label(d, text=b + ':').grid(row=r, column=0, sticky='nw', padx=6, pady=3)
             deger = mevcut.get(k)
             deger = '%g' % deger if isinstance(deger, float) else ('' if deger is None else str(deger))
-            if k in ('deger', 'aciklama', 'urunler') and (len(deger) > 60 or '\n' in deger or k == 'deger'):
+            if k in ('deger', 'aciklama', 'urunler', 'metin') and (len(deger) > 60 or '\n' in deger or
+                                                                k in ('deger', 'metin')):
                 w = tk.Text(d, width=70, height=4 if k != 'deger' or '\n' in deger else 2, font=('Arial', 10))
                 w.insert('1.0', deger)
                 al = (lambda w=w: w.get('1.0', 'end').rstrip('\n'))
@@ -1891,6 +2021,298 @@ class VeriPenceresi:
 # PDF / Excel tasarimi
 # ======================================================================
 # Kesif sorulari duzenleyici
+# ======================================================================
+# Satis sureci: aktivite, gunluk isler, rapor
+# ======================================================================
+class AktiviteDiyalogu:
+    """Gorusme / arama / demo kaydi + sonraki takip tarihi (+ istenirse asama degisimi)."""
+    def __init__(self, ust, veri, no, asama, sonra):
+        from datetime import datetime, timedelta
+        self.veri, self.no, self.sonra = veri, no, sonra
+        d = self.d = tk.Toplevel(ust)
+        d.title('Görüşme / aktivite: ' + no)
+        d.transient(ust)
+        d.grab_set()
+        self.tur = tk.StringVar(value='Arama')
+        self.sonraki = tk.StringVar(value=(datetime.now() + timedelta(days=3)).strftime('%d.%m.%Y'))
+        self.asama = tk.StringVar(value=asama)
+        tk.Label(d, text='Tür:').grid(row=0, column=0, sticky='w', padx=8, pady=4)
+        ttk.Combobox(d, textvariable=self.tur, values=AKTIVITE_TURLERI, state='readonly', width=14).grid(
+            row=0, column=1, sticky='w', padx=8)
+        tk.Label(d, text='Ne konuşuldu / sonuç:').grid(row=1, column=0, sticky='nw', padx=8, pady=4)
+        self.metin = tk.Text(d, width=60, height=5, font=('Arial', 10), wrap='word')
+        self.metin.grid(row=1, column=1, padx=8, pady=4)
+        tk.Label(d, text='Sonraki takip (GG.AA.YYYY):').grid(row=2, column=0, sticky='w', padx=8)
+        tk.Entry(d, textvariable=self.sonraki, width=12).grid(row=2, column=1, sticky='w', padx=8)
+        tk.Label(d, text='Aşama:').grid(row=3, column=0, sticky='w', padx=8, pady=4)
+        ttk.Combobox(d, textvariable=self.asama, values=ASAMALAR[:5], state='readonly', width=14).grid(
+            row=3, column=1, sticky='w', padx=8)
+        tk.Label(d, text='Kazandı / Kaybetti için Geçmiş veya Aşama kutusunu kullanın. Takip boş = takip yok.',
+                 fg='#555').grid(row=4, column=1, sticky='w', padx=8)
+        _dugme(d, '✔ Kaydet', self.kaydet, '#27ae60').grid(row=5, column=1, sticky='w', padx=8, pady=8)
+
+    def kaydet(self):
+        sonraki = tarih_oku(self.sonraki.get())
+        if self.sonraki.get().strip() and not sonraki:
+            messagebox.showwarning('Tarih', 'Tarihi GG.AA.YYYY olarak yazın.', parent=self.d)
+            return
+        self.veri.aktivite_ekle(self.no, self.tur.get(), self.metin.get('1.0', 'end').strip(), sonraki)
+        surec = self.veri.teklif_sureci(self.no) or {}
+        if self.asama.get() and self.asama.get() != surec.get('asama'):
+            self.veri.asama_yaz(self.no, self.asama.get())
+        self.d.destroy()
+        self.sonra()
+
+
+class GunlukPencere:
+    """Bugun yapilacaklar: gecikmis ve bugunku takipler, biten gecerlilik, hareketsiz teklifler,
+    kazanilan / kaybedilen musterilerle uzun vadeli temas."""
+    def __init__(self, ana):
+        self.ana = ana
+        self.p = tk.Toplevel(ana.pencere)
+        self.p.title('Bugün yapılacaklar')
+        self.p.geometry('1150x520')
+        self.p.transient(ana.pencere)
+        ust = tk.Frame(self.p, bg=LACIVERT, pady=6)
+        ust.pack(fill=tk.X)
+        tk.Label(ust, text='🔔 BUGÜN YAPILACAKLAR', font=('Arial', 13, 'bold'), bg=LACIVERT, fg='white').pack(
+            side=tk.LEFT, padx=10)
+        self.bilgi = tk.Label(ust, text='', bg=LACIVERT, fg='#f1c40f')
+        self.bilgi.pack(side=tk.LEFT)
+        kol = [('oncelik', '', 30), ('no', 'Teklif No', 120), ('musteri', 'Müşteri', 250), ('is', 'Yapılacak', 420),
+               ('asama', 'Aşama', 100), ('tutar', 'Net (KDV Hr.)', 110), ('tarih', 'Tarih', 85)]
+        self.tree = ttk.Treeview(self.p, columns=[k for k, _, _ in kol], show='headings')
+        for k, b, w in kol:
+            self.tree.heading(k, text=b)
+            self.tree.column(k, width=w, anchor='e' if k == 'tutar' else 'w')
+        self.tree.tag_configure('acil', background='#fadbd8')
+        self.tree.tag_configure('bugun', background='#fef9e7')
+        self.tree.tag_configure('uzun', background='#eaf2f8')
+        self.tree.pack(fill=tk.BOTH, expand=True, padx=8, pady=6)
+        self.tree.bind('<Double-1>', lambda e: self.ac())
+        alt = tk.Frame(self.p)
+        alt.pack(fill=tk.X, padx=8, pady=6)
+        for metin, komut, renk in [('📂 Teklifi aç', self.ac, '#2980b9'),
+                                   ('＋ Görüşme ekle', self.aktivite, '#27ae60'),
+                                   ('+2 gün ertele', lambda: self.ertele(2), '#7f8c8d'),
+                                   ('+7 gün ertele', lambda: self.ertele(7), '#7f8c8d'),
+                                   ('✔ Takibi kapat', lambda: self.ertele(None), '#95a5a6')]:
+            _dugme(alt, metin, komut, renk).pack(side=tk.LEFT, padx=3)
+        self.doldur()
+
+    def doldur(self):
+        self.tree.delete(*self.tree.get_children())
+        isler = self.ana.bugun_guncelle()
+        isaret = {0: ('⛔', 'acil'), 1: ('●', 'bugun'), 2: ('○', ''), 3: ('★', 'uzun'), 4: ('↻', 'uzun')}
+        for n, x in enumerate(isler):
+            simge, etiket = isaret.get(x['oncelik'], ('', ''))
+            self.tree.insert('', 'end', iid='%d|%s' % (n, x['no']), tags=(etiket,), values=(
+                simge, x['no'], x['musteri'], x['is'], x['asama'], para(x['tutar']), tarih_goster(x['tarih'])))
+        self.bilgi.config(text='  %d iş  ·  ⛔ gecikmiş  ● bugün  ○ hareketsiz  ★ kazanılan müşteri  ↻ tekrar temas'
+                               % len(isler))
+
+    def _no(self):
+        sec = self.tree.selection()
+        return sec[0].split('|', 1)[1] if sec else None
+
+    def ac(self):
+        no = self._no()
+        g = self.ana.veri.teklif_girdisi(no) if no else None
+        if g:
+            self.ana.yukle(g)
+            self.ana.nb.select(self.ana.sekme_asistan)
+            self.p.destroy()
+
+    def aktivite(self):
+        no = self._no()
+        if no:
+            surec = self.ana.veri.teklif_sureci(no) or {}
+            AktiviteDiyalogu(self.p, self.ana.veri, no, surec.get('asama') or 'Teklif verildi', self.doldur)
+
+    def ertele(self, gun):
+        from datetime import datetime, timedelta
+        no = self._no()
+        if no:
+            self.ana.veri.takip_yaz(no, (datetime.now() + timedelta(days=gun)).strftime('%Y-%m-%d') if gun else None)
+            if not gun:
+                self.ana.veri.aktivite_ekle(no, 'Not', 'Takip kapatıldı', None)
+            self.doldur()
+
+
+class RaporPenceresi:
+    """Satis rapor panosu: kazanma orani, huni, aylik trend, satisci, kayip nedenleri, indirim etkisi, paketler."""
+    DONEMLER = [('Son 3 ay', 92), ('Son 6 ay', 183), ('Son 12 ay', 366), ('Bu yıl', -1), ('Tümü', 0)]
+
+    def __init__(self, ana):
+        self.ana = ana
+        self.p = tk.Toplevel(ana.pencere)
+        self.p.title('Satış Raporu')
+        self.p.geometry('1250x780')
+        self.p.transient(ana.pencere)
+        ust = tk.Frame(self.p, bg=LACIVERT, pady=6)
+        ust.pack(fill=tk.X)
+        tk.Label(ust, text='📊 SATIŞ RAPORU', font=('Arial', 13, 'bold'), bg=LACIVERT, fg='white').pack(
+            side=tk.LEFT, padx=10)
+        self.donem = tk.StringVar(value='Son 12 ay')
+        self.kisi = tk.StringVar(value='Tümü')
+        tk.Label(ust, text='Dönem:', bg=LACIVERT, fg='white').pack(side=tk.LEFT, padx=(20, 2))
+        cb = ttk.Combobox(ust, textvariable=self.donem, values=[d for d, _ in self.DONEMLER], state='readonly',
+                          width=10)
+        cb.pack(side=tk.LEFT)
+        cb.bind('<<ComboboxSelected>>', lambda e: self.doldur())
+        tk.Label(ust, text='Hazırlayan:', bg=LACIVERT, fg='white').pack(side=tk.LEFT, padx=(12, 2))
+        self.kisi_cb = ttk.Combobox(ust, textvariable=self.kisi, state='readonly', width=18)
+        self.kisi_cb.pack(side=tk.LEFT)
+        self.kisi_cb.bind('<<ComboboxSelected>>', lambda e: self.doldur())
+        _dugme(ust, '📊 Excel\'e aktar', self.excel, '#27ae60').pack(side=tk.RIGHT, padx=8)
+
+        self.kpi = tk.Frame(self.p, bg='#f0f0f0', pady=4)
+        self.kpi.pack(fill=tk.X, padx=8)
+        orta = tk.Frame(self.p)
+        orta.pack(fill=tk.BOTH, expand=True, padx=8)
+        sol = tk.Frame(orta)
+        sol.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        tk.Label(sol, text='Aylık teklif ve kazanılan tutar', font=('Arial', 10, 'bold')).pack(anchor='w')
+        self.grafik = tk.Canvas(sol, height=210, bg='white', highlightthickness=1, highlightbackground='#ccc')
+        self.grafik.pack(fill=tk.X)
+        self.grafik.bind('<Configure>', lambda e: self._grafik())
+        nb = ttk.Notebook(sol)
+        nb.pack(fill=tk.BOTH, expand=True, pady=4)
+        self.tablolar = {}
+        for anahtar, ad, kolonlar in [
+                ('aylik', 'Aylık', [('ay', 'Ay', 80), ('teklif', 'Teklif', 60), ('tutar', 'Tutar', 120),
+                                    ('kazanilan', 'Kazanılan', 75), ('kazanilan_tutar', 'Kazanılan tutar', 120),
+                                    ('kaybedilen', 'Kaybedilen', 75), ('oran', 'Kazanma %', 75)]),
+                ('satisci', 'Satışçı', [('hazirlayan', 'Hazırlayan', 160), ('teklif', 'Teklif', 60),
+                                        ('tutar', 'Tutar', 120), ('kazanilan', 'Kazanılan', 75),
+                                        ('kaybedilen', 'Kaybedilen', 75), ('kazanilan_tutar', 'Kazanılan tutar', 120),
+                                        ('oran', 'Kazanma %', 75), ('ort_indirim', 'Ort. indirim %', 90)]),
+                ('indirim', 'İndirim etkisi', [('bant', 'İndirim', 100), ('teklif', 'Teklif', 70),
+                                               ('kazanilan', 'Kazanılan', 80), ('kaybedilen', 'Kaybedilen', 80),
+                                               ('oran', 'Kazanma %', 80)]),
+                ('paketler', 'Paketler', [('kod', 'Paket', 220), ('teklif', 'Teklif', 80),
+                                          ('kazanilan', 'Kazanılan', 80)])]:
+            f = tk.Frame(nb)
+            nb.add(f, text='  %s  ' % ad)
+            tree = ttk.Treeview(f, columns=[k for k, _, _ in kolonlar], show='headings', height=8)
+            for k, b, w in kolonlar:
+                tree.heading(k, text=b)
+                tree.column(k, width=w, anchor='w' if k in ('ay', 'hazirlayan', 'bant', 'kod') else 'e')
+            tree.pack(fill=tk.BOTH, expand=True)
+            self.tablolar[anahtar] = (tree, kolonlar)
+        sag = tk.Frame(orta, padx=8)
+        sag.pack(side=tk.LEFT, fill=tk.Y)
+        tk.Label(sag, text='Aşama hunisi', font=('Arial', 10, 'bold')).pack(anchor='w')
+        self.huni = tk.Canvas(sag, width=360, height=230, bg='white', highlightthickness=1,
+                              highlightbackground='#ccc')
+        self.huni.pack()
+        tk.Label(sag, text='Kayıp nedenleri', font=('Arial', 10, 'bold')).pack(anchor='w', pady=(8, 0))
+        self.neden = tk.Label(sag, text='', justify='left', anchor='w', font=('Arial', 9), bg='white',
+                              relief=tk.GROOVE, width=48, padx=6, pady=4)
+        self.neden.pack(fill=tk.X)
+        tk.Label(sag, text='Aktiviteler (dönem)', font=('Arial', 10, 'bold')).pack(anchor='w', pady=(8, 0))
+        self.akt = tk.Label(sag, text='', justify='left', anchor='w', font=('Arial', 9), bg='white',
+                            relief=tk.GROOVE, width=48, padx=6, pady=4)
+        self.akt.pack(fill=tk.X)
+        self.doldur()
+
+    def _aralik(self):
+        from datetime import datetime, timedelta
+        gun = dict(self.DONEMLER)[self.donem.get()]
+        if gun == -1:
+            return datetime.now().strftime('%Y-01-01')
+        return (datetime.now() - timedelta(days=gun)).strftime('%Y-%m-%d') if gun else None
+
+    def doldur(self):
+        import teklif_rapor
+        tum = self.ana.veri.rapor_verisi()
+        kisiler = sorted({r.get('hazirlayan') or '' for r in tum} - {''})
+        self.kisi_cb['values'] = ['Tümü'] + kisiler
+        bas = self._aralik()
+        kisi = None if self.kisi.get() == 'Tümü' else self.kisi.get()
+        satirlar = teklif_rapor.filtrele(tum, bas, None, kisi)
+        nolar = {r['no'] for r in satirlar}
+        akt = [a for a in self.ana.veri.aktiviteler() if a['no'] in nolar and (not bas or a['tarih'][:10] >= bas)]
+        self.r = r = teklif_rapor.rapor(satirlar, akt)
+        for w in self.kpi.winfo_children():
+            w.destroy()
+        k = r['kpi']
+        for baslik, deger, renk in [
+                ('Teklif', '%d\n%s' % (k['teklif'], para(k['teklif_tutar'])), '#2c3e50'),
+                ('Kazanılan', '%d\n%s' % (k['kazanilan'], para(k['kazanilan_tutar'])), '#1e8449'),
+                ('Kaybedilen', '%d\n%s' % (k['kaybedilen'], para(k['kaybedilen_tutar'])), '#c0392b'),
+                ('Bekleyen', '%d\n%s' % (k['bekleyen'], para(k['bekleyen_tutar'])), '#d68910'),
+                ('Kazanma oranı', '%s adet\n%s tutar' % (
+                    '%%%d' % k['kazanma_orani'] if k['kazanma_orani'] is not None else '-',
+                    '%%%d' % k['kazanma_orani_tutar'] if k['kazanma_orani_tutar'] is not None else '-'), '#117a65'),
+                ('Ort. karar süresi', ('%d gün' % k['ortalama_karar_gunu']) if k['ortalama_karar_gunu'] is not None
+                 else '-', '#5d6d7e'),
+                ('Ağırlıklı bekleyen', para(k['agirlikli_pipeline']), '#8e44ad')]:
+            f = tk.Frame(self.kpi, bg=renk, padx=10, pady=4)
+            f.pack(side=tk.LEFT, padx=3, fill=tk.Y)
+            tk.Label(f, text=baslik, bg=renk, fg='#eeeeee', font=('Arial', 8, 'bold')).pack(anchor='w')
+            tk.Label(f, text=deger, bg=renk, fg='white', font=('Arial', 11, 'bold'), justify='left').pack(anchor='w')
+        for anahtar, (tree, kolonlar) in self.tablolar.items():
+            tree.delete(*tree.get_children())
+            for x in r[anahtar]:
+                tree.insert('', 'end', values=[para(x[c]) if 'tutar' in c else ('' if x.get(c) is None else x[c])
+                                               for c, _, _ in kolonlar])
+        self.neden.config(text='\n'.join('%-28s %3d   %s' % (x['neden'][:28], x['adet'], para(x['tutar']))
+                                         for x in r['nedenler'][:8]) or 'Kayıp yok / neden girilmemiş')
+        self.akt.config(text='   '.join('%s: %d' % x for x in r['aktivite']) or 'Aktivite kaydı yok')
+        self._grafik()
+        self._huni()
+
+    def _grafik(self):
+        c = self.grafik
+        c.delete('all')
+        veri = (getattr(self, 'r', None) or {}).get('aylik', [])[-12:]
+        if not veri:
+            c.create_text(20, 100, text='Bu dönemde teklif yok', anchor='w', fill='#888')
+            return
+        gen, yuk = max(c.winfo_width(), 400), 210
+        en_buyuk = max(max(x['tutar'] for x in veri), 1)
+        adim = (gen - 40) / len(veri)
+        for i, x in enumerate(veri):
+            x0 = 30 + i * adim
+            h1 = (yuk - 50) * x['tutar'] / en_buyuk
+            h2 = (yuk - 50) * x['kazanilan_tutar'] / en_buyuk
+            c.create_rectangle(x0 + 4, yuk - 25 - h1, x0 + adim / 2, yuk - 25, fill='#aab7c4', outline='')
+            c.create_rectangle(x0 + adim / 2, yuk - 25 - h2, x0 + adim - 4, yuk - 25, fill='#1e8449', outline='')
+            c.create_text(x0 + adim / 2, yuk - 12, text=x['ay'][2:], font=('Arial', 8))
+            if x['oran'] is not None:
+                c.create_text(x0 + adim / 2, yuk - 30 - max(h1, h2), text='%%%d' % x['oran'], font=('Arial', 7),
+                              fill='#1e8449')
+        c.create_rectangle(gen - 200, 8, gen - 190, 18, fill='#aab7c4', outline='')
+        c.create_text(gen - 186, 13, text='Teklif tutarı', anchor='w', font=('Arial', 8))
+        c.create_rectangle(gen - 110, 8, gen - 100, 18, fill='#1e8449', outline='')
+        c.create_text(gen - 96, 13, text='Kazanılan', anchor='w', font=('Arial', 8))
+
+    def _huni(self):
+        c = self.huni
+        c.delete('all')
+        veri = self.r['huni']
+        if not veri:
+            return
+        en_buyuk = max(x['adet'] for x in veri) or 1
+        renkler = {'Kazandı': '#1e8449', 'Kaybetti': '#c0392b'}
+        for i, x in enumerate(veri):
+            y = 10 + i * 30
+            w = 40 + 200 * x['adet'] / en_buyuk
+            c.create_rectangle(180 - w / 2, y, 180 + w / 2, y + 24, fill=renkler.get(x['asama'], '#2471a3'),
+                               outline='')
+            c.create_text(180, y + 12, text='%s: %d · %s' % (x['asama'], x['adet'], para(x['tutar'])),
+                          fill='white', font=('Arial', 8, 'bold'))
+
+    def excel(self):
+        import teklif_rapor
+        yol = filedialog.asksaveasfilename(parent=self.p, defaultextension='.xlsx', initialdir=self.ana.veri.klasor,
+                                           initialfile='Satis_Raporu.xlsx', filetypes=[('Excel', '*.xlsx')])
+        if yol:
+            teklif_rapor.excel_yaz(yol, self.r, '%s · %s' % (self.donem.get(), self.kisi.get()))
+            dosya_ac(yol)
+
+
 # ======================================================================
 class KesifDuzenleyici:
     """Kesif sorularini anlasilir bir formla duzenler: soru metni, tur, secenekler, standart cevap, grup,

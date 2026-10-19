@@ -1356,7 +1356,7 @@ DIA lisans + hizmet teklifi hazırlar; RACA_DIA_Teklif_Motoru.xlsx'in program ha
 6. 3) Ödeme / Taksit: her seçenekte müşterinin ödeyeceği, bankanın keseceği komisyon ve size kalan tutar. PDF kolonuna çift tıklayarak müşteriye hangi seçeneklerin sunulacağını belirleyin.
 7. 4) Bakım Anlaşması: önerilen paket ve hesabın dökümü; teklife eklenecek paketi seçin.
 8. 5) Satış Asistanı & Kontroller: tahmini kazanma ihtimali, öneriler ve kritik hatalar.
-9. Kaydet: numara verilir. Revizyon Kaydet: aynı teklifin -R1, -R2 sürümü (eskisi korunur). PDF / Excel: kritik hata varsa yönetici şifresi (tanımlıysa) veya onay istenir.
+9. Kaydet: numara verilir. Revizyon: aynı teklifin -R1, -R2 sürümü (eskisi korunur). PDF / Excel: kritik hata varsa yönetici şifresi (tanımlıysa) veya onay istenir.
 
 ### Uyarlama nasıl hesaplanır (hizmet dökümü)
 
@@ -1424,7 +1424,7 @@ Yıllık destek saati = taban saat + kullanıcı × destek_kullanici_saat + mod�
 ### Alternatif teklif ve revizyon
 
 - Aynı müşteri için Ekonomik / Önerilen / Kapsamlı teklifleri ayrı kaydedin (Etiket alanı). Geçmiş'te Ctrl ile 2-4 tanesini seçip "Seçilenleri Karşılaştır": yan yana karşılaştırma PDF'i.
-- Revizyon Kaydet: RT-2026-0001 → RT-2026-0001-R1; PDF başlığında "Revizyon 1" yazar, kayıtta önceki sürümle genel toplam farkı gösterilir.
+- Revizyon: RT-2026-0001 → RT-2026-0001-R1; PDF başlığında "Revizyon 1" yazar, kayıtta önceki sürümle genel toplam farkı gösterilir.
 
 ### DİA paket kampanyaları ve DİA ekranıyla karşılaştırma
 
@@ -1437,13 +1437,39 @@ Yıllık destek saati = taban saat + kullanıcı × destek_kullanici_saat + mod�
 
 ### PDF / Excel tasarımı (Tasarım düğmesi)
 
-- Üç hazır tasarım: Kurumsal (logo solda, firma bilgileri sağda), Modern (renkli bant başlık), Sade (siyah-beyaz, yazıcı dostu). Kopyalayıp kendi tasarımınızı oluşturabilirsiniz.
-- Görünüm: şablon, ana ve vurgu rengi, yazı boyutu, teklif başlığı, logo (PNG/JPG).
+- Hazır tasarımlar: Kurumsal (logo solda, firma bilgileri sağda), Kurumsal Klasik (ortalanmış logo, çift çizgi), Kurumsal Kapaklı (ilk sayfa kapak: logo, müşteri, teklif no, hazırlayan), Kurumsal Şeritli (her sayfada solda renkli şerit), Modern (renkli bant başlık), Sade (siyah-beyaz). Kopyalayıp kendi tasarımınızı oluşturabilirsiniz.
+- Görünüm: şablon, ana ve vurgu rengi, yazı boyutu, teklif başlığı (Türkçe / İngilizce), logo (PNG/JPG).
+- Uyarlama gösterimi: Detaylı (kalem + kapsam + dayanak + hesap), Kalem listesi (kalem + kapsam), Özet (tek kutu: toplam tutar, saat ve kalem adları). Teklif özeti: Detaylı, Kısa (net / KDV / genel toplam) veya Gizle. Bakım bedeli: Aylık, Aylık + Yıllık veya Yıllık. Bakım bölümünü tamamen kapatmak için Gösterilecek Alanlar > Bakım.
 - Gösterilecek Alanlar: ön yazı, Teklifi Veren / Teklif Edilen kutuları, hazırlayan, paket kodları, paket içeriği, liste fiyatı / indirim kolonları, ek kullanıcı ve yıllık bulut bedeli, uyarlama dayanağı ve hesabı, ödeme seçenekleri, bakım, toplam maliyet, ticari şartlar, banka, notlar, imza, alt bilgi.
-- Metinler: ön yazı, ticari şartlar (her satır bir madde), kapanış. {musteri} {yetkili} {tarih} {gecerlilik} {teklif_no} {firma} {hazirlayan} alanları otomatik doldurulur.
+- Metinler (Türkçe ve English sekmeleri): ön yazı, ticari şartlar (her satır bir madde; tasarımla sabitlenir), kapanış. Sabit notlar her teklifte yazılır; teklif ekranındaki notu "Bu notu sabit notlara ekle" ile de sabitleyebilirsiniz. {musteri} {yetkili} {tarih} {gecerlilik} {teklif_no} {firma} {hazirlayan} alanları otomatik doldurulur.
 - Firma ve Hazırlayan: adres, telefon, e-posta, web, vergi no, banka/IBAN, teklifi hazırlayan kişi. Bunlar tüm tasarımlarda ortaktır.
 - Önizle ile PDF/Excel'i hemen görün; "Kaydet ve Varsayılan Yap" ile tasarım sabitlenir, yeni teklifler bu tasarımla açılır. Teklif ekranındaki "PDF tasarımı" kutusundan teklife özel başka tasarım seçilebilir ve teklifle birlikte kaydedilir.
 - PDF'te alt bilgi: firma iletişim bilgileri ve "Sayfa x / y". Excel'de logo, renkler ve yazdırma alt bilgisi de uygulanır.
+
+### Uyarlama kalem adları, döviz ve İngilizce teklif
+
+- Keşif & Uyarlama sekmesinde hizmet adına çift tıklayın: o teklif için adı ve kapsamı değiştirin (PDF/Excel'e bu yazılır). "Sonraki tekliflerde de kullanılsın" işaretlenirse Veriler > Hizmet Kalemleri'ne kaydedilir. "Tanımlı ada dön" değişikliği geri alır.
+- Para birimi TL / USD / EUR. Kur elle girilir (1 USD = ? TL); "Kuru varsayılan yap" ile kaydedilir ve sonraki dövizli tekliflerde hazır gelir. Hesap TL'de yapılır, PDF/Excel tutarları kura bölünerek basılır; ticari şartlara kur ve faturalama notu eklenir. Ekranda dövizli net ve KDV dahil tutar görünür.
+- Teklif dili Türkçe / English: başlık, bölüm adları, tablo başlıkları, varsayılan hizmet adları, ödeme seçenekleri ve tasarımın İngilizce metinleri kullanılır. Paket adları ve elle yazılan notlar olduğu gibi kalır.
+
+### Satış süreci, takip ve "Bugün" listesi
+
+- Kaydedilen teklif "Teklif verildi" aşamasında başlar ve takip tarihi atanır (takip_ilk_gun, varsayılan 2 gün). Aşamalar: Fırsat, Keşif, Teklif verildi, Müzakere, Sözlü onay, Kazandı, Kaybetti.
+- Satış Asistanı sekmesi > Satış süreci: aşama, sonraki takip tarihi (+2 / +7 gün), görüşme / aktivite ekle (Arama, Toplantı, Demo, E-posta, Ziyaret, Not; ne konuşuldu ve sonraki takip). Aktivite geçmişi altta listelenir.
+- Üstteki "Bugün (N)" düğmesi: gecikmiş ve bugünkü takipler, geçerliliği 3 gün içinde bitecek teklifler, 7 gündür hareketsiz teklifler, kazanılan müşteride memnuniyet / bakım görüşmesi (kazanilan_takip_gun, varsayılan 30), kaybedilen müşteride tekrar temas (kaybedilen_takip_gun, varsayılan 120). Gecikmiş iş varsa düğme kırmızı olur ve program açılışta listeyi gösterir (acilista_gunluk).
+- Geçmiş listesinde aşama, takip tarihi, kazanma olasılığı ve hazırlayan kolonları vardır.
+
+### Satış asistanı: sonraki adımlar ve geçmişten öğrenme
+
+- Sonraki adımlar: teklifin aşamasına göre ne yapılacağını sırayla yazar (Veriler > Satış Senaryoları > ASAMA). Karar verici bilgisi yoksa, keşif eksikse, kritik hata varsa bunları en üste ekler.
+- Satış Senaryoları tablosunu kendi satış yönteminize göre değiştirin: ASAMA (aşama adımları), ITIRAZ (itiraz ve cevabı), TAVIZ (fiyattan önce verilecek tavizler). Metinlerde {saat} {gun} {dokum} {hedef} {taban} {gecerlilik} {bakim} {rakip_ort} {biz} teklifin rakamlarıyla doldurulur.
+- Geçmişten öğrenilenler (sonuçlanan teklif sayısı arttıkça güçlenir): bu müşteriye önceki teklifler, kazanma oranı en yüksek indirim aralığı, bakım anlaşmalı / anlaşmasız kazanma oranı, paket tipine göre kazanma, kazanılan tekliflerin ortalama kapanma süresi (bu teklif uzadıysa uyarır), en sık kayıp nedeni. Bunun için teklifleri KAZANDI / KAYBETTİ işaretleyin ve kayıp nedenini yazın.
+
+### Satış raporu (Rapor düğmesi)
+
+- Dönem (son 3/6/12 ay, bu yıl, tümü) ve hazırlayan seçilir.
+- Kartlar: teklif sayısı ve tutarı, kazanılan, kaybedilen, bekleyen, kazanma oranı (adet ve tutar), ortalama karar süresi, ağırlıklı bekleyen (bekleyen tutar × kazanma olasılığı).
+- Aylık grafik (teklif ve kazanılan tutar, kazanma %), aşama hunisi, kayıp nedenleri, aktivite sayıları; Aylık, Satışçı, İndirim etkisi ve Paketler tabloları. "Excel'e aktar" tüm tabloları ayrı sayfalara yazar.
 
 ### Excel'de düzeltilen hatalar
 
@@ -1473,6 +1499,10 @@ Teklif Geçmişi penceresinde arama, Aç/Düzenle, Kopyala (aynı teklifi yeni n
 | min_uyarlama | 0 | Uyarlama alt sınırı (KDV hariç) |
 | max_uyarlama | 0 | Uyarlama üst sınırı (0 = sınır yok) |
 | kdv | 20 | KDV oranı (%) |
+| takip_ilk_gun | 2 | Kaydedilen teklifin ilk takip tarihi: teklif tarihinden kaç gün sonra |
+| kazanilan_takip_gun | 30 | Kazanılan teklifte memnuniyet / bakım görüşmesi kaç gün sonra (0 = yok) |
+| kaybedilen_takip_gun | 120 | Kaybedilen teklifte tekrar temas kaç gün sonra (0 = yok) |
+| acilista_gunluk | 1 | 1: açılışta bugünkü takipler varsa "Bugün" penceresi açılır |
 | kur_usd | 0 | Elle kur: 1 USD kaç TL (dövizli teklifte varsayılan; teklif ekranında değiştirilebilir) |
 | kur_eur | 0 | Elle kur: 1 EUR kaç TL |
 | rakip_ayni_saat | 1 | 1: rakip = bizim adam/saat × rakibin saatlik ücreti (aynı iş). 0: Rakipler tablosundaki saat |

@@ -9,7 +9,7 @@ import os
 import re
 import shutil
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 YEDEK_SAYISI = 30
 
@@ -22,6 +22,10 @@ AYARLAR = [
     ('min_uyarlama', 0, 'Uyarlama alt sınırı (KDV hariç)'),
     ('max_uyarlama', 0, 'Uyarlama üst sınırı (0 = sınır yok)'),
     ('kdv', 20, 'KDV oranı (%)'),
+    ('takip_ilk_gun', 2, 'Kaydedilen teklifin ilk takip tarihi: teklif tarihinden kaç gün sonra'),
+    ('kazanilan_takip_gun', 30, 'Kazanılan teklifte memnuniyet / bakım görüşmesi kaç gün sonra (0 = yok)'),
+    ('kaybedilen_takip_gun', 120, 'Kaybedilen teklifte tekrar temas kaç gün sonra (0 = yok)'),
+    ('acilista_gunluk', 1, '1: açılışta bugünkü takipler varsa "Bugün" penceresi açılır'),
     ('kur_usd', 0, 'Elle kur: 1 USD kaç TL (dövizli teklifte varsayılan; teklif ekranında değiştirilebilir)'),
     ('kur_eur', 0, 'Elle kur: 1 EUR kaç TL'),
     ('rakip_ayni_saat', 1, '1: rakip = bizim adam/saat × rakibin saatlik ücreti (aynı iş). 0: Rakipler tablosundaki saat'),
@@ -110,6 +114,10 @@ CREATE TABLE IF NOT EXISTS bakim_paketi (
 CREATE TABLE IF NOT EXISTS paket_kampanya (
     ad TEXT PRIMARY KEY, kodlar TEXT, yuzde REAL DEFAULT 0, tutar REAL DEFAULT 0, baslangic TEXT, bitis TEXT,
     aktif INTEGER DEFAULT 1, kaynak TEXT DEFAULT 'ELLE');
+CREATE TABLE IF NOT EXISTS aktivite (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, no TEXT, tarih TEXT, tur TEXT, metin TEXT, sonraki_tarih TEXT, kisi TEXT);
+CREATE TABLE IF NOT EXISTS senaryo (
+    baslik TEXT PRIMARY KEY, tur TEXT, metin TEXT, sira INTEGER DEFAULT 0, aktif INTEGER DEFAULT 1);
 CREATE TABLE IF NOT EXISTS kesif_profil (ad TEXT PRIMARY KEY, cevaplar TEXT);
 CREATE TABLE IF NOT EXISTS tasarim (ad TEXT PRIMARY KEY, veri TEXT, varsayilan INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS gerceklesen (no TEXT, kalem TEXT, tahmin REAL, gercek REAL, PRIMARY KEY (no, kalem));
@@ -177,6 +185,49 @@ KESIF_EK = {
     'it_personeli_yok': ('Eğitim ve proje', 'HAYIR', 'Bilgi işlem desteği yoksa tüm işler daha uzun sürer.'),
     'acil_proje': ('Eğitim ve proje', 'HAYIR', 'Sıkışık takvim tüm hizmetleri hızlandırma maliyeti getirir.'),
 }
+TEKLIF_TEMEL_KOLONLAR = ('no, tarih, musteri, paket_tipi, kullanici, lisans, uyarlama, net, genel_toplam, kampanya, '
+                         'sonuc, red_nedeni, veri')
+ASAMALAR = ['Fırsat', 'Keşif', 'Teklif verildi', 'Müzakere', 'Sözlü onay', 'Kazandı', 'Kaybetti']
+AKTIVITE_TURLERI = ['Arama', 'Toplantı', 'Demo', 'E-posta', 'Ziyaret', 'Not']
+# Satis senaryolari (Veriler > Satis Senaryolari'ndan degistirilir). tur: ASAMA (asamaya gore sonraki adimlar),
+# ITIRAZ (itiraz karsilama), TAVIZ (fiyat disi tavizler). Yer tutucular: {dokum} {saat} {gun} {rakip_ort} {biz}
+# {gecerlilik} {taban} {hedef} {bakim}
+SENARYOLAR = [
+    ('Fırsat', 'ASAMA', 'Karar vericiyi ve satın alma sürecini öğrenin (kim onaylar, bütçe, tarih).\n'
+                        'Mevcut programı, kullanıcı sayısını ve en büyük sorunlarını sorun.\n'
+                        'Keşif görüşmesi / demo tarihi alın.', 1),
+    ('Keşif', 'ASAMA', 'Keşif formunu en az %80 doldurun; cari / stok sayılarını veri temizleme ile alın.\n'
+                       'Demo yapın: müşterinin kendi iş akışını gösterin (fatura, stok, raporlar).\n'
+                       'Teklif tarihi ve karar tarihini netleştirin.', 2),
+    ('Teklif verildi', 'ASAMA', '2 gün içinde arayın: teklif ulaştı mı, anlaşılmayan kalem var mı?\n'
+                                'Uyarlama dökümünü ({saat} saat ≈ {gun} iş günü) birlikte gözden geçirin.\n'
+                                'Karar tarihini ve başka teklif alıp almadıklarını öğrenin.', 3),
+    ('Müzakere', 'ASAMA', 'Fiyattan önce kapsam ve değer konuşun; taviz sırasını izleyin.\n'
+                          'Hedef {hedef}; taban {taban} — tabanın altına inmeyin.\n'
+                          'Her tavizin karşılığında taahhüt isteyin (peşin ödeme, imza tarihi, bakım anlaşması).', 4),
+    ('Sözlü onay', 'ASAMA', 'Sipariş / sözleşme formunu ve ödeme planını hemen gönderin.\n'
+                            'Proje başlangıç tarihini ve müşteri tarafı sorumluyu belirleyin.\n'
+                            'Bakım anlaşmasını ({bakim}) sözleşmeye ekleyin.', 5),
+    ('Kazandı', 'ASAMA', 'Proje başlangıç toplantısı yapın, uyarlama takvimini paylaşın.\n'
+                         'Canlıya geçişten 1 ay sonra memnuniyet görüşmesi; bakım anlaşması yoksa teklif edin.\n'
+                         'Memnunsa referans ve tavsiye isteyin; ek modül / kullanıcı ihtiyacını sorun.', 6),
+    ('Kaybetti', 'ASAMA', 'Kayıp nedenini mutlaka kaydedin (fiyat, rakip, erteleme, kapsam).\n'
+                          '3-6 ay sonra tekrar arayın: seçtikleri çözümden memnunlar mı?\n'
+                          'Yeni kampanya veya sürüm çıktığında haber verin.', 7),
+    ('"Fiyat yüksek"', 'ITIRAZ', 'Hizmet dökümünü gösterin: {dokum} (toplam {saat} saat ≈ {gun} iş günü). Rakip '
+                                 'teklifinde kaç saat kurulum, eğitim ve canlıya geçiş desteği olduğunu sorun.', 1),
+    ('"Rakip daha ucuz"', 'ITIRAZ', 'Aynı saat için rakip ortalaması {rakip_ort}, bizimki {biz}. Fark saat ücretinde '
+                                    'değil kapsamda olabilir; rakibin saat ve kapsamını yazılı isteyin.', 2),
+    ('"Uyarlamayı sonra yaparız"', 'ITIRAZ', 'Eksik kurulum, yanlış açılış bakiyesi ve eğitimsiz kullanıcı ilk aylarda '
+                                             'en büyük maliyettir; canlıya geçiş desteği tek seferliktir.', 3),
+    ('"Düşünüp döneceğiz"', 'ITIRAZ', 'Teklif {gecerlilik} tarihine kadar geçerli; bir sonraki görüşme tarihini o '
+                                      'an netleştirin ve karar vericiyi görüşmeye davet edin.', 4),
+    ('"Bütçemiz yok / bu yıl değil"', 'ITIRAZ', 'Taksit ve vade farksız ödeme seçeneklerini gösterin; aylık maliyet '
+                                                'olarak konuşun. Başlangıç paketini sonra genişletme yolunu önerin.', 5),
+    ('Ek eğitim hediye', 'TAVIZ', 'Ek eğitim saati hediye (fiyat düşmeden değer artar)', 1),
+    ('Bakım ilk aylar', 'TAVIZ', 'Bakım anlaşmasının ilk 3 ayı ücretsiz veya 1. yıl %10 indirimli', 2),
+    ('Vade farksız taksit', 'TAVIZ', 'Vade farksız taksit — fiyat aynı kalır', 3),
+]
 # Hazir kesif profilleri (standart cevap setleri); Kesif sekmesinden uygulanir / yenisi kaydedilir.
 KESIF_PROFILLERI = {
     'Perakende mağaza': {'sube_sayisi': 3, 'depo_sayisi': 1, 'uretim': False, 'e_donusum': True,
@@ -236,6 +287,9 @@ class TeklifVeri:
         self._kolon_ekle('kampanya', 'kosul', 'TEXT')
         for kolon in ('varsayilan', 'grup', 'aciklama'):
             self._kolon_ekle('kesif', kolon, 'TEXT')
+        for kolon, tip in (('asama', 'TEXT'), ('takip_tarihi', 'TEXT'), ('hazirlayan', 'TEXT'),
+                           ('olasilik', 'INTEGER'), ('sonuc_tarihi', 'TEXT')):
+            self._kolon_ekle('teklif', kolon, tip)
         self._varsayilanlari_doldur()
         for ad, deger, _ in AYARLAR:
             self.db.execute('INSERT OR IGNORE INTO ayar VALUES (?, ?)', (ad, str(deger)))
@@ -263,6 +317,8 @@ class TeklifVeri:
         for kod, (grup, vars_, aciklama) in KESIF_EK.items():      # eski veritabanlarinda bos kalan alanlar
             self.db.execute('UPDATE kesif SET grup=?, varsayilan=COALESCE(varsayilan, ?), aciklama=COALESCE('
                             'aciklama, ?) WHERE kod=? AND grup IS NULL', (grup, vars_, aciklama, kod))
+        if bos('senaryo'):
+            self.db.executemany('INSERT INTO senaryo (baslik, tur, metin, sira) VALUES (?,?,?,?)', SENARYOLAR)
         if bos('kesif_profil'):
             self.db.executemany('INSERT INTO kesif_profil VALUES (?, ?)', [
                 (ad, json.dumps(c, ensure_ascii=False)) for ad, c in KESIF_PROFILLERI.items()])
@@ -364,6 +420,7 @@ class TeklifVeri:
             'bakim': [dict(r) for r in self.db.execute('SELECT * FROM bakim_paketi ORDER BY sira, ad')],
             'kampanyalar': self.kampanyalar(),
             'profiller': self.kesif_profilleri(),
+            'senaryolar': self.senaryolar(),
             'paket_kampanyalari': [dict(r) for r in self.db.execute(
                 'SELECT * FROM paket_kampanya WHERE aktif=1 ORDER BY ad')],
         }
@@ -441,15 +498,20 @@ class TeklifVeri:
             self.db.execute('DELETE FROM tasarim WHERE ad=?', (ad,))
 
     def gecmis_ozeti(self):
-        """Satis asistani icin sonuclanmis teklifler: [{no, net, genel_toplam, sonuc, indirim, kullanici, red}]"""
+        """Satis asistani icin gecmis teklifler (sonuclanan ve bekleyen): indirim, kullanici, sure, paket tipi,
+        bakim, musteri. Asistan bunlardan kazanma oranlarini ogrenir."""
         sonuc = []
-        for r in self.db.execute("SELECT no, net, genel_toplam, sonuc, red_nedeni, veri FROM teklif "
-                                 "WHERE sonuc IN ('KAZANDI', 'KAYBETTİ')"):
+        for r in self.db.execute("SELECT no, tarih, musteri, paket_tipi, net, genel_toplam, sonuc, red_nedeni, veri, "
+                                 "sonuc_tarihi, hazirlayan FROM teklif"):
             g = json.loads(r['veri']) if r['veri'] else {}
             sonuc.append({'no': r['no'], 'net': r['net'] or 0, 'genel_toplam': r['genel_toplam'] or 0,
-                          'sonuc': r['sonuc'], 'red': r['red_nedeni'] or '',
-                          'indirim': float((g.get('_ozet') or {}).get('toplam_indirim_yuzde', g.get('kampanya_yuzde') or 0)),
-                          'kullanici': int(g.get('masaustu', 0) or 0) + int(g.get('mobil', 0) or 0)})
+                          'sonuc': r['sonuc'] or 'BEKLİYOR', 'red': r['red_nedeni'] or '',
+                          'indirim': float((g.get('_ozet') or {}).get('toplam_indirim_yuzde',
+                                                                     g.get('kampanya_yuzde') or 0) or 0),
+                          'kullanici': int(g.get('masaustu', 0) or 0) + int(g.get('mobil', 0) or 0),
+                          'tarih': r['tarih'] or '', 'sonuc_tarihi': r['sonuc_tarihi'] or '',
+                          'musteri': r['musteri'] or '', 'paket_tipi': r['paket_tipi'] or '',
+                          'bakim': bool(g.get('bakim')), 'hazirlayan': r['hazirlayan'] or ''})
         return sonuc
 
     # ------------------------------------------------------------ yazma
@@ -493,20 +555,32 @@ class TeklifVeri:
         girdi['_ozet'] = {'hizmet': {h['kod']: h['saat'] for h in sonuc.get('hizmet', {}).get('kalemler', [])},
                           'toplam_indirim_yuzde': sonuc.get('kontrol', {}).get('toplam_indirim_yuzde', 0),
                           'genel_toplam': sonuc['genel_toplam']}
-        eski = self.db.execute('SELECT sonuc, red_nedeni FROM teklif WHERE no=?', (no,)).fetchone()
+        eski = self.db.execute('SELECT * FROM teklif WHERE no=?', (no,)).fetchone()
+        tarih = girdi.get('tarih') or datetime.now().strftime('%Y-%m-%d')
+        ayar = self.ayarlar()
+        ilk_takip = (datetime.strptime(tarih, '%Y-%m-%d') + timedelta(days=int(ayar.get('takip_ilk_gun') or 2))
+                     ).strftime('%Y-%m-%d')
+        satir = {'no': no, 'tarih': tarih, 'musteri': girdi.get('musteri', ''), 'paket_tipi': sonuc['paket_tipi'],
+                 'kullanici': '%d masaüstü / %d mobil' % (girdi.get('masaustu', 0), girdi.get('mobil', 0)),
+                 'lisans': sonuc['lisans']['net'], 'uyarlama': sonuc['uyarlama']['net'], 'net': sonuc['net_toplam'],
+                 'genel_toplam': sonuc['genel_toplam'], 'kampanya': sonuc['kampanya']['ad'],
+                 'sonuc': eski['sonuc'] if eski else 'BEKLİYOR', 'red_nedeni': eski['red_nedeni'] if eski else '',
+                 'veri': json.dumps(girdi, ensure_ascii=False),
+                 # surec bilgileri kayit guncellense de korunur
+                 'asama': (eski['asama'] if eski and eski['asama'] else 'Teklif verildi'),
+                 'takip_tarihi': (eski['takip_tarihi'] if eski else ilk_takip),
+                 'hazirlayan': (eski['hazirlayan'] if eski and eski['hazirlayan'] else ayar.get('hazirlayan_ad', '')),
+                 'olasilik': (sonuc.get('asistan') or {}).get('skor'),
+                 'sonuc_tarihi': eski['sonuc_tarihi'] if eski else None}
         with self.db:
-            self.db.execute('INSERT OR REPLACE INTO teklif VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', (
-                no, girdi.get('tarih') or datetime.now().strftime('%Y-%m-%d'), girdi.get('musteri', ''),
-                sonuc['paket_tipi'], '%d masaüstü / %d mobil' % (girdi.get('masaustu', 0), girdi.get('mobil', 0)),
-                sonuc['lisans']['net'], sonuc['uyarlama']['net'], sonuc['net_toplam'], sonuc['genel_toplam'],
-                sonuc['kampanya']['ad'], eski['sonuc'] if eski else 'BEKLİYOR', eski['red_nedeni'] if eski else '',
-                json.dumps(girdi, ensure_ascii=False)))
+            self.db.execute('INSERT OR REPLACE INTO teklif (%s) VALUES (%s)' % (
+                ', '.join(satir), ', '.join('?' * len(satir))), list(satir.values()))
         self.yedek_al('teklif_kaydi', en_az_dakika=30)
         return no
 
     def teklifler(self, ara=''):
         sql = 'SELECT no, tarih, musteri, paket_tipi, kullanici, lisans, uyarlama, net, genel_toplam, kampanya, ' \
-              'sonuc, red_nedeni FROM teklif'
+              'sonuc, red_nedeni, asama, takip_tarihi, hazirlayan, olasilik, sonuc_tarihi FROM teklif'
         par = ()
         if ara:
             sql += ' WHERE musteri LIKE ? OR no LIKE ?'
@@ -519,8 +593,116 @@ class TeklifVeri:
 
     def teklif_sonuc_yaz(self, no, sonuc, red_nedeni=''):
         self.degisti = True
+        asama = {'KAZANDI': 'Kazandı', 'KAYBETTİ': 'Kaybetti'}.get(sonuc)
+        bugun = datetime.now().strftime('%Y-%m-%d')
         with self.db:
-            self.db.execute('UPDATE teklif SET sonuc=?, red_nedeni=? WHERE no=?', (sonuc, red_nedeni, no))
+            if asama:
+                self.db.execute('UPDATE teklif SET sonuc=?, red_nedeni=?, asama=?, sonuc_tarihi=?, takip_tarihi=? '
+                                'WHERE no=?', (sonuc, red_nedeni, asama, bugun, self._sonuc_sonrasi_takip(sonuc), no))
+            else:
+                self.db.execute("UPDATE teklif SET sonuc=?, red_nedeni=?, sonuc_tarihi=NULL, asama=CASE WHEN asama "
+                                "IN ('Kazandı', 'Kaybetti') THEN 'Teklif verildi' ELSE asama END WHERE no=?",
+                                (sonuc, red_nedeni, no))
+        self.aktivite_ekle(no, 'Sonuç', sonuc + (': ' + red_nedeni if red_nedeni else ''), None, takip_degistir=False)
+
+    def _sonuc_sonrasi_takip(self, sonuc):
+        """Kazanilan teklifte memnuniyet / bakim gorusmesi, kaybedilende tekrar temas tarihi."""
+        ayar = self.ayarlar()
+        gun = int(ayar.get('kazanilan_takip_gun') or 0) if sonuc == 'KAZANDI' else \
+            int(ayar.get('kaybedilen_takip_gun') or 0)
+        return (datetime.now() + timedelta(days=gun)).strftime('%Y-%m-%d') if gun else None
+
+    # ------------------------------------------------------------ satis sureci: asama, takip, aktivite
+    def asama_yaz(self, no, asama):
+        self.degisti = True
+        sonuc = {'Kazandı': 'KAZANDI', 'Kaybetti': 'KAYBETTİ'}.get(asama)
+        if sonuc:
+            self.teklif_sonuc_yaz(no, sonuc)
+            return
+        with self.db:
+            self.db.execute("UPDATE teklif SET asama=?, sonuc='BEKLİYOR' WHERE no=?", (asama, no))
+        self.aktivite_ekle(no, 'Aşama', asama, None, takip_degistir=False)
+
+    def takip_yaz(self, no, tarih):
+        self.degisti = True
+        with self.db:
+            self.db.execute('UPDATE teklif SET takip_tarihi=? WHERE no=?', (tarih or None, no))
+
+    def aktivite_ekle(self, no, tur, metin, sonraki_tarih, takip_degistir=True):
+        """Gorusme / arama / demo kaydi; sonraki takip tarihi teklifin takip tarihini gunceller."""
+        self.degisti = True
+        with self.db:
+            self.db.execute('INSERT INTO aktivite (no, tarih, tur, metin, sonraki_tarih, kisi) VALUES (?,?,?,?,?,?)',
+                            (no, datetime.now().strftime('%Y-%m-%d %H:%M'), tur, metin or '', sonraki_tarih or None,
+                             self.ayarlar().get('hazirlayan_ad', '')))
+            if takip_degistir:
+                self.db.execute('UPDATE teklif SET takip_tarihi=? WHERE no=?', (sonraki_tarih or None, no))
+
+    def aktiviteler(self, no=None):
+        if no:
+            return [dict(r) for r in self.db.execute('SELECT * FROM aktivite WHERE no=? ORDER BY id DESC', (no,))]
+        return [dict(r) for r in self.db.execute('SELECT * FROM aktivite ORDER BY id DESC')]
+
+    def rapor_verisi(self):
+        """Rapor panosu icin tum teklifler (girdi cozulmus, indirim ozetiyle)."""
+        sonuc = []
+        for r in self.db.execute('SELECT * FROM teklif'):
+            d = dict(r)
+            try:
+                g = json.loads(d.pop('veri') or '{}')
+            except ValueError:
+                g = {}
+            d['girdi'] = g
+            d['indirim'] = float((g.get('_ozet') or {}).get('toplam_indirim_yuzde', g.get('kampanya_yuzde') or 0) or 0)
+            sonuc.append(d)
+        return sonuc
+
+    def teklif_sureci(self, no):
+        r = self.db.execute('SELECT asama, takip_tarihi, hazirlayan, sonuc, tarih, olasilik FROM teklif WHERE no=?',
+                            (no,)).fetchone()
+        return dict(r) if r else None
+
+    def gunluk_isler(self, bugun=None):
+        """Bugun yapilacaklar: gecikmis / bugunku takipler, gecerliligi biten teklifler, hareketsiz buyuk teklifler,
+        kazanilanlarda bakim / memnuniyet, kaybedilenlerde tekrar temas. Oncelik sirasiyla."""
+        bugun = bugun or datetime.now().strftime('%Y-%m-%d')
+        ayar = self.ayarlar()
+        gecerlilik = int(ayar.get('gecerlilik_gun') or 15)
+        son_aktivite = {r['no']: r['t'] for r in self.db.execute('SELECT no, MAX(tarih) t FROM aktivite GROUP BY no')}
+        isler = []
+        for t in self.teklifler():
+            if t['takip_tarihi'] and t['takip_tarihi'] <= bugun:
+                gecikme = (datetime.strptime(bugun, '%Y-%m-%d') - datetime.strptime(t['takip_tarihi'], '%Y-%m-%d')).days
+                if t['sonuc'] == 'KAZANDI':
+                    neden, oncelik = 'Kazanılan müşteri: memnuniyet görüşmesi, bakım anlaşması, referans', 3
+                elif t['sonuc'] == 'KAYBETTİ':
+                    neden, oncelik = 'Kaybedilen müşteri: tekrar temas (yeni ihtiyaç, rakipten memnuniyet)', 4
+                else:
+                    neden = 'Takip %s' % ('bugün' if gecikme == 0 else '%d gün gecikti' % gecikme)
+                    oncelik = 0 if gecikme > 0 else 1
+                isler.append({'no': t['no'], 'musteri': t['musteri'], 'is': neden, 'oncelik': oncelik,
+                              'tutar': t['net'] or 0, 'asama': t['asama'] or '', 'tarih': t['takip_tarihi']})
+                continue
+            if t['sonuc'] != 'BEKLİYOR' or not t['tarih']:
+                continue
+            bitis = datetime.strptime(t['tarih'], '%Y-%m-%d') + timedelta(days=gecerlilik)
+            kalan = (bitis - datetime.strptime(bugun, '%Y-%m-%d')).days
+            if 0 <= kalan <= 3:
+                isler.append({'no': t['no'], 'musteri': t['musteri'], 'is': 'Geçerlilik %d gün sonra bitiyor' % kalan,
+                              'oncelik': 1, 'tutar': t['net'] or 0, 'asama': t['asama'] or '',
+                              'tarih': bitis.strftime('%Y-%m-%d')})
+            son = (son_aktivite.get(t['no']) or t['tarih'])[:10]
+            sessiz = (datetime.strptime(bugun, '%Y-%m-%d') - datetime.strptime(son, '%Y-%m-%d')).days
+            if sessiz >= 7 and not t['takip_tarihi']:
+                isler.append({'no': t['no'], 'musteri': t['musteri'], 'is': '%d gündür hareket yok, takip tarihi de '
+                              'yok' % sessiz, 'oncelik': 2, 'tutar': t['net'] or 0, 'asama': t['asama'] or '',
+                              'tarih': son})
+        isler.sort(key=lambda x: (x['oncelik'], -x['tutar']))
+        return isler
+
+    # ------------------------------------------------------------ satis senaryolari (duzenlenebilir)
+    def senaryolar(self):
+        return [dict(r) for r in self.db.execute('SELECT * FROM senaryo WHERE aktif=1 ORDER BY tur, sira, baslik')]
 
     def teklif_sil(self, no):
         self.degisti = True
@@ -699,7 +881,8 @@ class TeklifVeri:
                     if not v[0] or not v[2]:
                         continue
                     tarih = v[1].strftime('%Y-%m-%d') if isinstance(v[1], datetime) else _metin(v[1])
-                    self.db.execute('INSERT OR IGNORE INTO teklif VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL)', (
+                    self.db.execute('INSERT OR IGNORE INTO teklif (%s) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL)'
+                                    % TEKLIF_TEMEL_KOLONLAR, (
                         _metin(v[0]), tarih, _metin(v[2]), _metin(v[3]), _metin(v[4]), _sayi(v[5]), _sayi(v[6]),
                         _sayi(v[7]) / (1 + self.ayarlar()['kdv'] / 100), _sayi(v[7]), _metin(v[8]),
                         _metin(v[9]) or 'BEKLİYOR', _metin(v[10])))
@@ -837,7 +1020,7 @@ def sifre_ozeti(sifre):
 
 def _tablo_adi(t):
     if t not in ('paket', 'ayar', 'sabit_kalem', 'kampanya', 'rakip', 'hizmet', 'kesif', 'odeme_secenegi',
-                 'bakim_paketi', 'paket_kampanya'):
+                 'bakim_paketi', 'paket_kampanya', 'senaryo'):
         raise ValueError('Bilinmeyen tablo: ' + str(t))
     return t
 

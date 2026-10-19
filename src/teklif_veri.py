@@ -22,6 +22,8 @@ AYARLAR = [
     ('min_uyarlama', 0, 'Uyarlama alt sınırı (KDV hariç)'),
     ('max_uyarlama', 0, 'Uyarlama üst sınırı (0 = sınır yok)'),
     ('kdv', 20, 'KDV oranı (%)'),
+    ('kur_usd', 0, 'Elle kur: 1 USD kaç TL (dövizli teklifte varsayılan; teklif ekranında değiştirilebilir)'),
+    ('kur_eur', 0, 'Elle kur: 1 EUR kaç TL'),
     ('rakip_ayni_saat', 1, '1: rakip = bizim adam/saat × rakibin saatlik ücreti (aynı iş). 0: Rakipler tablosundaki saat'),
     ('rakip_ucuz_esik', 10, 'Rakip ortalamasından bu % kadar ucuzsak "Rekabetçisiniz"'),
     ('rakip_pahali_esik', 15, 'Rakip ortalamasından bu % kadar pahalıysak "Pahalısınız"'),
@@ -398,11 +400,17 @@ class TeklifVeri:
     def tasarimlar(self):
         """{ad: tasarim} ; tablo bossa hazir tasarimlar (Kurumsal varsayilan) eklenir."""
         import teklif_tasarim as T
-        if not self.db.execute('SELECT 1 FROM tasarim LIMIT 1').fetchone():
+        bos = not self.db.execute('SELECT 1 FROM tasarim LIMIT 1').fetchone()
+        surum = self.db.execute("SELECT deger FROM ayar WHERE ad='tasarim_surumu'").fetchone()
+        if bos or not surum or surum[0] != str(T.HAZIR_SURUM):
+            # yeni surumde eklenen hazir tasarimlar bir kez eklenir (kullanicinin sildigi geri gelmesin diye surumlu)
+            eklenecek = T.HAZIR_TASARIMLAR if bos else {ad: v for ad, v in T.HAZIR_TASARIMLAR.items()
+                                                       if ad in T.SURUM_EKLENEN.get(T.HAZIR_SURUM, ())}
             with self.db:
-                for ad in T.HAZIR_TASARIMLAR:
+                for ad in eklenecek:
                     self.db.execute('INSERT OR IGNORE INTO tasarim VALUES (?,?,?)',
-                                    (ad, T.json_yaz(T.hazir(ad)), 1 if ad == 'Kurumsal' else 0))
+                                    (ad, T.json_yaz(T.hazir(ad)), 1 if bos and ad == 'Kurumsal' else 0))
+                self.db.execute('INSERT OR REPLACE INTO ayar VALUES (?, ?)', ('tasarim_surumu', str(T.HAZIR_SURUM)))
         return {r['ad']: T.json_oku(r['veri']) for r in self.db.execute('SELECT ad, veri FROM tasarim ORDER BY ad')}
 
     def varsayilan_tasarim_adi(self):

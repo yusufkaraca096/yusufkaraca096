@@ -1473,6 +1473,8 @@ Teklif Geçmişi penceresinde arama, Aç/Düzenle, Kopyala (aynı teklifi yeni n
 | min_uyarlama | 0 | Uyarlama alt sınırı (KDV hariç) |
 | max_uyarlama | 0 | Uyarlama üst sınırı (0 = sınır yok) |
 | kdv | 20 | KDV oranı (%) |
+| kur_usd | 0 | Elle kur: 1 USD kaç TL (dövizli teklifte varsayılan; teklif ekranında değiştirilebilir) |
+| kur_eur | 0 | Elle kur: 1 EUR kaç TL |
 | rakip_ayni_saat | 1 | 1: rakip = bizim adam/saat × rakibin saatlik ücreti (aynı iş). 0: Rakipler tablosundaki saat |
 | rakip_ucuz_esik | 10 | Rakip ortalamasından bu % kadar ucuzsak "Rekabetçisiniz" |
 | rakip_pahali_esik | 15 | Rakip ortalamasından bu % kadar pahalıysak "Pahalısınız" |

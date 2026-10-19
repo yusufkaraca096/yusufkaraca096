@@ -7,7 +7,18 @@ import copy
 import json
 import re
 
-SABLONLAR = ['Kurumsal', 'Modern', 'Sade']
+SABLONLAR = ['Kurumsal', 'Klasik', 'Kapaklı', 'Şeritli', 'Modern', 'Sade']
+SABLON_ACIKLAMA = {
+    'Kurumsal': 'Logo solda, firma bilgileri sağda, ince renkli çizgiler.',
+    'Klasik': 'Ortalanmış logo ve başlık, çift çizgi, büyük harf bölüm başlıkları.',
+    'Kapaklı': 'İlk sayfa kapak (logo, müşteri, teklif no, hazırlayan); içerik Kurumsal düzende.',
+    'Şeritli': 'Her sayfada solda renkli şerit, sade ve modern kurumsal görünüm.',
+    'Modern': 'Renkli bant başlık, vurgulu bölüm başlıkları.',
+    'Sade': 'Siyah-beyaz, az renk, yazıcı dostu.',
+}
+UYARLAMA_GORUNUM = ['Detaylı', 'Kalem listesi', 'Özet']
+OZET_GORUNUM = ['Detaylı', 'Kısa', 'Gizle']
+BAKIM_GORUNUM = ['Aylık', 'Aylık + Yıllık', 'Yıllık']
 
 # (anahtar, ekranda gorunen ad, varsayilan)
 ALANLAR = [
@@ -49,16 +60,36 @@ VARSAYILAN = {
                'Lisans bedelleri DİA Yazılım güncel fiyat listesine göredir.\n'
                'Uyarlama hizmeti sözleşme imzasını takiben karşılıklı planlanan takvimle yürütülür.',
     'kapanis': 'Saygılarımızla,',
+    'uyarlama_gorunum': 'Detaylı',     # Detayli: kapsam + dayanak + hesap | Kalem listesi | Ozet: tek kutu
+    'ozet_gorunum': 'Detaylı',         # Detayli | Kisa: net / KDV / genel | Gizle
+    'bakim_gorunum': 'Aylık',          # bakim anlasmasi bedelleri aylik / yillik gosterimi
+    'baslik_en': 'DIA ERP LICENSE AND SERVICES PROPOSAL',
+    'on_yazi_en': 'Dear {yetkili},\n\nPlease find below our DIA ERP license and implementation services proposal '
+                  'prepared for {musteri}. Do not hesitate to contact us for any questions.',
+    'sartlar_en': 'This proposal is valid until {gecerlilik}.\n'
+                  'Prices exclude VAT; VAT is shown separately.\n'
+                  'License prices are based on the current DIA Software price list.\n'
+                  'Implementation services will be scheduled after the contract is signed.',
+    'kapanis_en': 'Kind regards,',
     'goster': {k: v for k, _, v in ALANLAR},
 }
 
 HAZIR_TASARIMLAR = {
     'Kurumsal': {},
+    'Kurumsal Klasik': {'sablon': 'Klasik', 'ana_renk': '#14213D', 'vurgu_renk': '#B08D57'},
+    'Kurumsal Kapaklı': {'sablon': 'Kapaklı', 'ana_renk': '#1F3A5F', 'vurgu_renk': '#C9A227'},
+    'Kurumsal Şeritli': {'sablon': 'Şeritli', 'ana_renk': '#0B4F6C', 'vurgu_renk': '#20A39E',
+                         'uyarlama_gorunum': 'Kalem listesi', 'ozet_gorunum': 'Kısa'},
     'Modern': {'sablon': 'Modern', 'ana_renk': '#0E5A73', 'vurgu_renk': '#F28C28'},
     'Sade': {'sablon': 'Sade', 'ana_renk': '#333333', 'vurgu_renk': '#888888',
              'goster': {'on_yazi': False, 'uyarlama_dayanak': False, 'bakim': False, 'tco': False,
                         'paket_kodu': False, 'dia_ek_bilgi': False}},
 }
+
+
+# Hazir tasarim surumu: eski veritabanlarina sonradan eklenen hazir tasarimlar bir kez eklenir
+HAZIR_SURUM = 2
+SURUM_EKLENEN = {2: ('Kurumsal Klasik', 'Kurumsal Kapaklı', 'Kurumsal Şeritli')}
 
 
 def tamamla(tasarim=None):
@@ -72,6 +103,10 @@ def tamamla(tasarim=None):
             t[k] = v
     if t['sablon'] not in SABLONLAR:
         t['sablon'] = 'Kurumsal'
+    for k, secenekler in (('uyarlama_gorunum', UYARLAMA_GORUNUM), ('ozet_gorunum', OZET_GORUNUM),
+                          ('bakim_gorunum', BAKIM_GORUNUM)):
+        if t[k] not in secenekler:
+            t[k] = VARSAYILAN[k]
     for k in ('ana_renk', 'vurgu_renk'):
         if not re.fullmatch(r'#[0-9a-fA-F]{6}', str(t[k])):
             t[k] = VARSAYILAN[k]

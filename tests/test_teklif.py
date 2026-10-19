@@ -609,7 +609,8 @@ class TasarimTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_hazir_tasarimlar_ve_varsayilan(self):
-        self.assertEqual(sorted(self.v.tasarimlar()), ['Kurumsal', 'Modern', 'Sade'])
+        self.assertEqual(sorted(self.v.tasarimlar()), ['Kurumsal', 'Kurumsal Kapaklı', 'Kurumsal Klasik',
+                                                       'Kurumsal Şeritli', 'Modern', 'Sade'])
         self.assertEqual(self.v.varsayilan_tasarim_adi(), 'Kurumsal')
         t = self.v.tasarim('Modern')
         t['goster']['tco'] = False
@@ -724,6 +725,90 @@ class KesifVeAsistanTest(unittest.TestCase):
         metin = satis_brifingi({'musteri': 'A'}, s)
         self.assertIn('SATIŞ BRİFİNGİ', metin)
         self.assertIn('Taviz sırası', metin)
+
+
+class GorunumDovizDilTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = self.tmp.name
+        motor_excel(os.path.join(self.d, 'motor.xlsx'))
+        self.v = TeklifVeri(os.path.join(self.d, 'teklif.db'))
+        self.v.excelden_ice_aktar(os.path.join(self.d, 'motor.xlsx'))
+        self.ayar = self.v.ayarlar()
+        self.g = {'teklif_no': 'RT-1', 'musteri': 'Örnek', 'masaustu': 2, 'mobil': 0, 'bakim': 'Standart',
+                  'kalemler': [{'kod': 'MAS1'}, {'kod': 'DIG1'}]}
+
+    def tearDown(self):
+        self.v.db.close()
+        self.tmp.cleanup()
+
+    def h(self, **g):
+        return hesapla(dict(self.g, **g), self.v.paketler(), self.ayar, kurallar=self.v.kurallar(gecmis=False))
+
+    def test_uyarlama_ve_ozet_gorunumu(self):
+        import teklif_tasarim
+        s = self.h()
+        t = teklif_tasarim.hazir('Kurumsal')
+        t.update(uyarlama_gorunum='Özet', ozet_gorunum='Kısa')
+        b = teklif_cikti.bolumler(self.g, s, self.ayar, t)
+        self.assertEqual(sum(1 for x in b if x[0] == 'tablo' and 'Hizmet' in x[1]), 0)     # uyarlama tablosu yok
+        vurgu = next(x for x in b if x[0] == 'vurgu')
+        self.assertIn('Kurulum ve parametre ayarları', vurgu[3])
+        ozet = next(x for x in b if x[0] == 'ozet')
+        self.assertEqual([r[0] for r in ozet[1]], ['NET TOPLAM (KDV Hariç)', 'KDV (%20)', 'GENEL TOPLAM (KDV Dahil)'])
+        t['ozet_gorunum'] = 'Gizle'
+        self.assertFalse([x for x in teklif_cikti.bolumler(self.g, s, self.ayar, t) if x[0] == 'ozet'])
+        t['uyarlama_gorunum'] = 'Kalem listesi'
+        tablo = next(x for x in teklif_cikti.bolumler(self.g, s, self.ayar, t) if x[0] == 'tablo' and
+                     x[1][0] == 'Hizmet')
+        self.assertNotIn('Dayanak', ' '.join(r[1] for r in tablo[2]))
+
+    def test_bakim_aylik_gosterim(self):
+        import teklif_tasarim
+        s = self.h()
+        t = teklif_tasarim.hazir('Kurumsal')
+        bakim = next(x for x in teklif_cikti.bolumler(self.g, s, self.ayar, t) if x[0] == 'tablo' and
+                     'Aylık (KDV Hr.)' in x[1])
+        self.assertNotIn('Yıllık (KDV Hr.)', bakim[1])
+        t['goster']['bakim'] = False
+        self.assertFalse([x for x in teklif_cikti.bolumler(self.g, s, self.ayar, t)
+                          if x[0] == 'bolum' and 'Bakım' in x[1]])
+
+    def test_doviz_ve_ingilizce(self):
+        import teklif_tasarim
+        g = dict(self.g, doviz='USD', kur=40, dil='EN')
+        s = self.h(**g)
+        b = teklif_cikti.bolumler(g, s, self.ayar, teklif_tasarim.hazir('Kurumsal'))
+        self.assertEqual(b[1][1], 'DIA ERP LICENSE AND SERVICES PROPOSAL')
+        ozet = next(x for x in b if x[0] == 'ozet')
+        self.assertEqual((ozet[3], ozet[4]), ('USD', 'EN'))
+        self.assertAlmostEqual(ozet[1][-1][1], round(s['genel_toplam'] / 40, 2))
+        self.assertIn('Licenses', [x[1][3:] for x in b if x[0] == 'bolum'])
+        self.assertTrue(any('1 USD = 40' in m for x in b if x[0] == 'maddeler' for m in x[1]))
+        pdf = teklif_cikti.pdf_olustur(os.path.join(self.d, 'en.pdf'), g, s, self.ayar)
+        self.assertTrue(os.path.getsize(pdf) > 1000)
+        self.assertEqual(teklif_cikti.bicim(1234.5, 'USD', 'EN'), '1,234.50 USD')
+        self.assertEqual(teklif_cikti.doviz_bilgisi({'doviz': 'EUR'}), ('TL', 1.0))       # kur yoksa TL
+
+    def test_hizmet_adi_teklife_ozel(self):
+        s = self.h(hizmet_metin={'kurulum': {'ad': 'Sistem kurulumu', 'kapsam': 'Kısa kapsam'}})
+        k = next(x for x in s['hizmet']['kalemler'] if x['kod'] == 'kurulum')
+        self.assertEqual((k['ad'], k['kapsam'], k['ozel_ad']), ('Sistem kurulumu', 'Kısa kapsam', True))
+        b = teklif_cikti.bolumler(self.g, s, self.ayar)
+        tablo = next(x for x in b if x[0] == 'tablo' and x[1][0] == 'Hizmet')
+        self.assertEqual(tablo[2][0][0], 'Sistem kurulumu')
+
+    def test_bos_teklifte_uyarlama_yok(self):
+        s = self.h(kalemler=[], cevaplar={'e_donusum': True, 'sube_sayisi': 4})
+        self.assertEqual(s['uyarlama']['saat'], 0)
+
+    def test_tum_sablonlar(self):
+        import teklif_tasarim
+        s = self.h()
+        for ad in teklif_tasarim.SABLONLAR:
+            t = teklif_tasarim.tamamla({'sablon': ad})
+            pdf = teklif_cikti.pdf_olustur(os.path.join(self.d, 'x.pdf'), self.g, s, self.ayar, t)
+            self.assertTrue(os.path.getsize(pdf) > 1000, ad)
 
 
 if __name__ == '__main__':

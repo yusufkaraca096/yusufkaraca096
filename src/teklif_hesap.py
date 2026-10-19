@@ -365,7 +365,7 @@ def kesif_ozeti(sorular, cevaplar):
             'yuzde': round(cevaplanan * 100.0 / toplam) if toplam else 100, 'bos': bos}
 
 
-def hizmet_hesapla(satirlar, kullanici, cevaplar, hizmetler, sorular, elle=None):
+def hizmet_hesapla(satirlar, kullanici, cevaplar, hizmetler, sorular, elle=None, metinler=None):
     """Uyarlama hizmet kalemleri; her kalemin saati ve gerekcesi."""
     elle = elle or {}
     kalemler = []
@@ -416,7 +416,7 @@ def hizmet_hesapla(satirlar, kullanici, cevaplar, hizmetler, sorular, elle=None)
         else:
             taban = 0.0
         k['taban'] = taban
-        k['saat'] = 0.0 if h == 'YUZDE' else round((taban + k['ek']) * k['kats'] * k['carpan'], 1)
+        k['saat'] = 0.0 if h == 'YUZDE' or not satirlar else round((taban + k['ek']) * k['kats'] * k['carpan'], 1)
     diger = sum(k['saat'] for k in kalemler if k['hesap'] != 'YUZDE')
     for k in kalemler:
         if k['hesap'] == 'YUZDE' and satirlar:
@@ -431,6 +431,12 @@ def hizmet_hesapla(satirlar, kullanici, cevaplar, hizmetler, sorular, elle=None)
             k['saat'] = _f(elle[k['kod']])
             k['nedenler'].append('Elle girildi (öneri %g saat)' % k['oneri_saat'])
             k['elle'] = True
+    for k in kalemler:      # teklife ozel ad / kapsam (PDF'te bu yazilir)
+        m = (metinler or {}).get(k['kod']) or {}
+        if (m.get('ad') or '').strip():
+            k['ad'], k['ozel_ad'] = m['ad'].strip(), True
+        if m.get('kapsam') is not None and str(m.get('kapsam')).strip():
+            k['kapsam'], k['ozel_kapsam'] = str(m['kapsam']).strip(), True
     return {'kalemler': kalemler, 'saat': round(sum(k['saat'] for k in kalemler), 1)}
 
 
@@ -1044,7 +1050,7 @@ def hesapla(girdi, paketler, ayar, sabit_fiyatlar=None, rakipler=None, kurallar=
                   kamp_indirim=_r(sum(s['kamp_indirim'] for s in satirlar)))
 
     hizmet = hizmet_hesapla(satirlar, masaustu + mobil, girdi.get('cevaplar') or {}, kurallar['hizmetler'],
-                            kurallar['sorular'], girdi.get('hizmet_elle'))
+                            kurallar['sorular'], girdi.get('hizmet_elle'), girdi.get('hizmet_metin'))
     saat = hizmet['saat']
     ucret = _f(girdi.get('saatlik_ucret')) if girdi.get('saatlik_ucret') not in (None, '') else \
         float(ayar['saatlik_ucret'])

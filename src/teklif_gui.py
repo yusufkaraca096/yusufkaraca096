@@ -108,6 +108,7 @@ class TeklifPenceresi:
         self.hizmet_elle = {}
         self.odeme_secimi = None
         self.cevap_vars = {}
+        self.hizmet_metin = {}
         self._yukleniyor = False
         self.verileri_yenile()
         self.arayuz()
@@ -153,14 +154,14 @@ class TeklifPenceresi:
         self.mb = {k: tk.StringVar() for k in ('yetkili', 'telefon', 'eposta', 'vkn', 'vergi_dairesi')}
 
         # Iki satir ayri cercevede: ayni grid kolonlarini paylasip pencereden tasmasinlar
-        satirlar = [tk.Frame(mf, bg='#f0f0f0'), tk.Frame(mf, bg='#f0f0f0')]
+        satirlar = [tk.Frame(mf, bg='#f0f0f0'), tk.Frame(mf, bg='#f0f0f0'), tk.Frame(mf, bg='#f0f0f0')]
         for f in satirlar:
             f.pack(fill=tk.X, pady=1)
 
         def etiketli(satir, metin, w):
             tk.Label(satirlar[satir], text=metin, bg='#f0f0f0').pack(side=tk.LEFT, padx=(8, 2))
             w.pack(side=tk.LEFT)
-        f0, f1 = satirlar
+        f0, f1, f2 = satirlar
         etiketli(0, 'Müşteri:', tk.Entry(f0, textvariable=self.musteri, width=42, font=('Arial', 11)))
         etiketli(0, 'Masaüstü:', tk.Spinbox(f0, from_=0, to=9999, textvariable=self.masaustu, width=6,
                                             font=('Arial', 11)))
@@ -178,7 +179,19 @@ class TeklifPenceresi:
         etiketli(1, 'E-posta:', tk.Entry(f1, textvariable=self.mb['eposta'], width=26))
         etiketli(1, 'VKN/TCKN:', tk.Entry(f1, textvariable=self.mb['vkn'], width=13))
         etiketli(1, 'Vergi dairesi:', tk.Entry(f1, textvariable=self.mb['vergi_dairesi'], width=16))
-        for v in (self.masaustu, self.mobil, self.tip_secim):
+        self.doviz = tk.StringVar(value='TL')
+        self.kur = tk.StringVar(value='')
+        self.dil = tk.StringVar(value='Türkçe')
+        cb = ttk.Combobox(f2, textvariable=self.doviz, values=teklif_cikti.DOVIZLER, state='readonly', width=6)
+        etiketli(2, 'Para birimi:', cb)
+        cb.bind('<<ComboboxSelected>>', lambda e: self._doviz_secildi())
+        etiketli(2, 'Kur (1 döviz = ? TL):', tk.Entry(f2, textvariable=self.kur, width=10))
+        _dugme(f2, '💾 Kuru varsayılan yap', self._kur_kaydet, '#7f8c8d').pack(side=tk.LEFT, padx=4)
+        etiketli(2, 'Teklif dili:', ttk.Combobox(f2, textvariable=self.dil, values=['Türkçe', 'English'],
+                                                 state='readonly', width=9))
+        self.doviz_lbl = tk.Label(f2, text='', bg='#f0f0f0', fg='#1b4f72', font=('Arial', 10, 'bold'))
+        self.doviz_lbl.pack(side=tk.LEFT, padx=10)
+        for v in (self.masaustu, self.mobil, self.tip_secim, self.kur, self.dil):
             v.trace_add('write', lambda *a: self.hesapla())
 
         # Sekmeler
@@ -272,8 +285,10 @@ class TeklifPenceresi:
             v.trace_add('write', lambda *a: self.hesapla())
         nf = tk.LabelFrame(sec, text=' Teklife özel not (PDF\'e yazılır) ', bg='#f0f0f0', padx=4)
         nf.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.notlar = tk.Text(nf, width=40, height=4, font=('Arial', 9))
+        self.notlar = tk.Text(nf, width=40, height=3, font=('Arial', 9))
         self.notlar.pack(fill=tk.BOTH, expand=True)
+        _dugme(nf, '📌 Bu notu sabit notlara ekle (her teklifte)', self._notu_sabitle, '#7f8c8d').pack(anchor='w',
+                                                                                                    pady=2)
 
     def _sekme_kesif(self):
         f = self.sekme_kesif
@@ -322,7 +337,7 @@ class TeklifPenceresi:
                                     justify='left')
         self.seyahat_lbl.grid(row=1, column=0, columnspan=5, sticky='w')
 
-        sag = tk.LabelFrame(f, text=' Uyarlama hizmet dökümü (Saat ✎ çift tık: elle; boş = öneri) ', bg='#f0f0f0',
+        sag = tk.LabelFrame(f, text=' Uyarlama hizmet dökümü (Hizmet adına çift tık: ad / kapsam değiştir · Saat ✎ çift tık: elle) ', bg='#f0f0f0',
                             padx=4)
         sag.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(6, 0))
         self.hizmet_tree = ttk.Treeview(sag, columns=('ad', 'saat', 'tutar', 'neden'), show='headings', height=9)
@@ -489,11 +504,12 @@ class TeklifPenceresi:
         tk.Checkbutton(ust, text='Seçenekleri PDF\'te göster', variable=self.bakim_sun, bg='#f0f0f0',
                        command=self.hesapla).pack(side=tk.LEFT, padx=10)
         _dugme(ust, 'Önerileni seç', self._bakim_onerileni_sec, '#16a085').pack(side=tk.LEFT)
-        self.bakim_tree = ttk.Treeview(f, columns=('ad', 'saat', 'yanit', 'yerinde', 'yillik', 'aylik', 'aciklama'),
+        self.bakim_tree = ttk.Treeview(f, columns=('ad', 'aylik', 'yillik', 'saat', 'yanit', 'yerinde', 'aciklama'),
                                        show='headings', height=4)
-        for k, b, w, a in [('ad', 'Paket', 150, 'w'), ('saat', 'Yıllık Saat', 85, 'e'), ('yanit', 'Yanıt', 90, 'w'),
-                           ('yerinde', 'Yerinde Gün', 85, 'e'), ('yillik', 'Yıllık (KDV Hr.)', 120, 'e'),
-                           ('aylik', 'Aylık', 100, 'e'), ('aciklama', 'Kapsam', 600, 'w')]:
+        for k, b, w, a in [('ad', 'Paket', 150, 'w'), ('aylik', 'AYLIK (KDV Hr.)', 120, 'e'),
+                           ('yillik', 'Yıllık toplam', 110, 'e'), ('saat', 'Destek saat/ay', 95, 'e'),
+                           ('yanit', 'Yanıt', 90, 'w'), ('yerinde', 'Yerinde gün/yıl', 95, 'e'),
+                           ('aciklama', 'Kapsam', 560, 'w')]:
             self.bakim_tree.heading(k, text=b)
             self.bakim_tree.column(k, width=w, anchor=a)
         self.bakim_tree.tag_configure('onerilen', background='#d5f5e3')
@@ -644,7 +660,9 @@ class TeklifPenceresi:
                 'maliyet': sayi_oku(self.maliyet.get(), 0), 'notlar': self.notlar.get('1.0', 'end').strip(),
                 'odeme_secimi': list(self.odeme_secimi) if self.odeme_secimi is not None else None,
                 'bakim': '' if bakim == 'Ekleme' else bakim, 'bakim_sun': self.bakim_sun.get(),
-                'tasarim': self.tasarim_var.get(),
+                'tasarim': self.tasarim_var.get(), 'hizmet_metin': dict(self.hizmet_metin),
+                'doviz': self.doviz.get(), 'kur': sayi_oku(self.kur.get(), None),
+                'dil': 'EN' if self.dil.get() == 'English' else 'TR',
                 'revizyon_onceki': self.revizyon_onceki}
 
     def hesapla(self):
@@ -681,6 +699,15 @@ class TeklifPenceresi:
             self.ayar['lisans_yuzdesi'], para(u['lisans_payi']), u['saat'], para(u['saat_ucreti']),
             para(u['saat_bedeli']), ('   → ' + u['sinir'] + ' uygulandı') if u['sinir'] else ''))
         self.genel_lbl.config(text='GENEL TOPLAM (KDV Dahil):  %s TL' % para(s['genel_toplam']))
+        birim, kur = teklif_cikti.doviz_bilgisi(g)
+        if self.doviz.get() != 'TL' and birim == 'TL':
+            self.doviz_lbl.config(text='⚠ Kur girin', fg='#c0392b')
+        elif birim != 'TL':
+            self.doviz_lbl.config(text='PDF: %s + KDV  |  %s KDV dahil' % (
+                teklif_cikti.bicim(s['net_toplam'] / kur, birim), teklif_cikti.bicim(s['genel_toplam'] / kur, birim)),
+                fg='#1b4f72')
+        else:
+            self.doviz_lbl.config(text='')
         d = s['dia']
         self.dia_lbl.config(text='DİA ekranıyla karşılaştırın →  Üyelik Giriş: %s   Ek +1 Masaüstü: %s   Ek +1 Mobil: %s'
                                  '   Yıllık Bulut: %s%s' % (
@@ -730,8 +757,9 @@ class TeklifPenceresi:
         secili = self.hizmet_tree.selection()
         self.hizmet_tree.delete(*self.hizmet_tree.get_children())
         for k in s['hizmet']['kalemler']:
-            self.hizmet_tree.insert('', 'end', iid=k['kod'], tags=('elle',) if k.get('elle') else (), values=(
-                k['ad'], '%g' % k['saat'], para(k['tutar']), ' | '.join(k['nedenler'])))
+            ozel = k.get('ozel_ad') or k.get('ozel_kapsam')
+            self.hizmet_tree.insert('', 'end', iid=k['kod'], tags=('elle',) if k.get('elle') or ozel else (), values=(
+                ('✎ ' if ozel else '') + k['ad'], '%g' % k['saat'], para(k['tutar']), ' | '.join(k['nedenler'])))
         u = s['uyarlama']
         if u['lisans_payi']:
             self.hizmet_tree.insert('', 'end', iid='_lisans', values=(
@@ -756,6 +784,9 @@ class TeklifPenceresi:
     def hizmet_saat_duzenle(self, olay):
         iid = self.hizmet_tree.identify_row(olay.y)
         kolon = self.hizmet_tree.identify_column(olay.x)
+        if iid and not iid.startswith('_') and kolon in ('#1', '#4'):
+            self.hizmet_metni_duzenle(iid)
+            return
         if not iid or iid.startswith('_') or kolon != '#2':
             return
         x, y, w, h = self.hizmet_tree.bbox(iid, kolon)
@@ -814,8 +845,8 @@ class TeklifPenceresi:
         self.bakim_tree.delete(*self.bakim_tree.get_children())
         for p in b['paketler']:
             self.bakim_tree.insert('', 'end', tags=('onerilen',) if p['onerilen'] else (), values=(
-                p['ad'] + ('  ★ önerilen' if p['onerilen'] else ''), '%g' % p['saat'], p['yanit'],
-                '%g' % p['yerinde_gun'], para(p['yillik']), para(p['aylik']), p['aciklama']))
+                p['ad'] + ('  ★ önerilen' if p['onerilen'] else ''), para(p['aylik']), para(p['yillik']),
+                '%g' % round(p['saat'] / 12, 1), p['yanit'], '%g' % p['yerinde_gun'], p['aciklama']))
         satirlar = ['Yıllık destek saati neye göre belirlendi (ayarlar: Veriler > Ayarlar > destek_*):']
         for ad, deger in b['detay']:
             satirlar.append('  %-48s %s' % (ad, ('%+g saat' % deger) if deger is not None else ''))
@@ -882,6 +913,85 @@ class TeklifPenceresi:
             t.insert('end', '%s  ' % k['seviye'], k['seviye'])
             t.insert('end', k['mesaj'] + '\n')
         t.config(state='disabled')
+
+    def _doviz_secildi(self):
+        d = self.doviz.get()
+        if d == 'TL':
+            self.kur.set('')
+        else:
+            varsayilan = float(self.ayar.get('kur_' + d.lower()) or 0)
+            self.kur.set('%g' % varsayilan if varsayilan else '')
+        self.hesapla()
+
+    def _kur_kaydet(self):
+        d, kur = self.doviz.get(), sayi_oku(self.kur.get(), None)
+        if d == 'TL' or not kur:
+            messagebox.showinfo('Kur', 'Önce para birimini (USD/EUR) seçip kuru yazın.', parent=self.pencere)
+            return
+        self.veri.ayar_yaz('kur_' + d.lower(), kur)
+        self.ayar = self.veri.ayarlar()
+        self.durum_lbl.config(text='Varsayılan kur kaydedildi: 1 %s = %g TL' % (d, kur))
+
+    def _notu_sabitle(self):
+        metin = self.notlar.get('1.0', 'end').strip()
+        if not metin:
+            return
+        mevcut = (self.ayar.get('teklif_notlari') or '').strip()
+        if metin in mevcut:
+            messagebox.showinfo('Sabit not', 'Bu not zaten sabit notlarda var.', parent=self.pencere)
+            return
+        self.veri.ayar_yaz('teklif_notlari', (mevcut + '\n' + metin).strip())
+        self.ayar = self.veri.ayarlar()
+        self.notlar.delete('1.0', 'end')
+        self.hesapla()
+        messagebox.showinfo('Sabit not', 'Not sabit notlara eklendi; bundan sonra her teklifte yazılır.\n'
+                            'Düzenlemek için: Tasarım > Metinler > Sabit notlar.', parent=self.pencere)
+
+    def hizmet_metni_duzenle(self, iid):
+        """Uyarlama kaleminin PDF'teki adi ve kapsami (bu teklife ozel; istenirse varsayilan yapilir)."""
+        k = next((x for x in self.sonuc['hizmet']['kalemler'] if x['kod'] == iid), None)
+        if not k:
+            return
+        d = tk.Toplevel(self.pencere)
+        d.title('Hizmet adı ve kapsamı')
+        d.transient(self.pencere)
+        d.grab_set()
+        tk.Label(d, text='Hizmet adı:').grid(row=0, column=0, sticky='w', padx=8, pady=4)
+        ad = tk.StringVar(value=k['ad'])
+        tk.Entry(d, textvariable=ad, width=70).grid(row=0, column=1, padx=8, pady=4)
+        tk.Label(d, text='Kapsam:').grid(row=1, column=0, sticky='nw', padx=8, pady=4)
+        kapsam = tk.Text(d, width=70, height=4, font=('Arial', 10), wrap='word')
+        kapsam.insert('1.0', k['kapsam'])
+        kapsam.grid(row=1, column=1, padx=8, pady=4)
+        kalici = tk.BooleanVar(value=False)
+        tk.Checkbutton(d, text='Sonraki tekliflerde de bu ad ve kapsam kullanılsın (Veriler > Hizmet Kalemleri)',
+                       variable=kalici).grid(row=2, column=1, sticky='w', padx=8)
+
+        def kaydet():
+            yeni = {'ad': ad.get().strip(), 'kapsam': kapsam.get('1.0', 'end').strip()}
+            if kalici.get():
+                tablo = self.veri.tablo_oku('hizmet')
+                for h in tablo:
+                    if h['kod'] == iid:
+                        h['ad'], h['kapsam'] = yeni['ad'] or h['ad'], yeni['kapsam']
+                self.veri.tablo_yaz('hizmet', tablo)
+                self.hizmet_metin.pop(iid, None)
+                d.destroy()
+                self.veri_degisti()
+                return
+            self.hizmet_metin[iid] = yeni
+            d.destroy()
+            self.hesapla()
+
+        def orijinal():
+            self.hizmet_metin.pop(iid, None)
+            d.destroy()
+            self.hesapla()
+        f = tk.Frame(d)
+        f.grid(row=3, column=1, sticky='w', padx=8, pady=8)
+        _dugme(f, '✔ Kaydet', kaydet, '#27ae60').pack(side=tk.LEFT, padx=2)
+        _dugme(f, '↺ Tanımlı ada dön', orijinal, '#7f8c8d').pack(side=tk.LEFT, padx=2)
+        _dugme(f, 'Vazgeç', d.destroy, '#95a5a6').pack(side=tk.LEFT, padx=2)
 
     def brifing_kopyala(self):
         if not self.sonuc:
@@ -1082,6 +1192,10 @@ class TeklifPenceresi:
             else:
                 v.set('' if c in (None, '') else (c if tur == 'SECIM' else '%g' % c))
         self.hizmet_elle = dict(girdi.get('hizmet_elle') or {})
+        self.hizmet_metin = dict(girdi.get('hizmet_metin') or {})
+        self.doviz.set(girdi.get('doviz') or 'TL')
+        self.kur.set('' if not girdi.get('kur') else '%g' % girdi['kur'])
+        self.dil.set('English' if girdi.get('dil') == 'EN' else 'Türkçe')
         sy = girdi.get('seyahat') or {}
         self.sehir_disi.set(bool(sy.get('sehir_disi')))
         self.yerinde_gun.set('%g' % (sy.get('gun') or 0))
@@ -2012,7 +2126,7 @@ class TasarimPenceresi:
         self.ana = ana
         self.p = tk.Toplevel(ana.pencere)
         self.p.title('Teklif Tasarımı (PDF / Excel)')
-        self.p.geometry('1180x760')
+        self.p.geometry('1200x840')
         self.p.transient(ana.pencere)
         ust = tk.Frame(self.p, bg=LACIVERT, pady=6)
         ust.pack(fill=tk.X)
@@ -2042,7 +2156,8 @@ class TasarimPenceresi:
         nb.add(f4, text='  Firma ve Hazırlayan  ')
 
         # Gorunum
-        self.v = {k: tk.StringVar() for k in ('ad', 'sablon', 'ana_renk', 'vurgu_renk', 'yazi_boyutu', 'baslik')}
+        self.v = {k: tk.StringVar() for k in ('ad', 'sablon', 'ana_renk', 'vurgu_renk', 'yazi_boyutu', 'baslik',
+                                               'baslik_en', 'uyarlama_gorunum', 'ozet_gorunum', 'bakim_gorunum')}
         self.logo = tk.StringVar(value=ana.ayar.get('logo_yolu', ''))
         satir = 0
 
@@ -2052,8 +2167,14 @@ class TasarimPenceresi:
             w.grid(row=satir, column=1, sticky='w', pady=4)
             satir += 1
         alan('Tasarım adı:', tk.Entry(f1, textvariable=self.v['ad'], width=30))
-        alan('Şablon:', ttk.Combobox(f1, textvariable=self.v['sablon'], values=teklif_tasarim.SABLONLAR,
-                                     state='readonly', width=14))
+        fr = tk.Frame(f1)
+        ttk.Combobox(fr, textvariable=self.v['sablon'], values=teklif_tasarim.SABLONLAR, state='readonly',
+                     width=14).pack(side=tk.LEFT)
+        sablon_acik = tk.Label(fr, text='', fg='#555')
+        sablon_acik.pack(side=tk.LEFT, padx=8)
+        self.v['sablon'].trace_add('write', lambda *a: sablon_acik.config(
+            text=teklif_tasarim.SABLON_ACIKLAMA.get(self.v['sablon'].get(), '')))
+        alan('Şablon:', fr)
         for k, etiket in (('ana_renk', 'Ana renk:'), ('vurgu_renk', 'Vurgu rengi:')):
             fr = tk.Frame(f1)
             tk.Entry(fr, textvariable=self.v[k], width=10).pack(side=tk.LEFT)
@@ -2065,15 +2186,23 @@ class TasarimPenceresi:
         alan('Yazı boyutu:', tk.Spinbox(f1, from_=7, to=12, increment=0.5, textvariable=self.v['yazi_boyutu'],
                                         width=6))
         alan('Teklif başlığı:', tk.Entry(f1, textvariable=self.v['baslik'], width=50))
+        alan('Başlık (İngilizce):', tk.Entry(f1, textvariable=self.v['baslik_en'], width=50))
+        alan('Uyarlama gösterimi:', ttk.Combobox(f1, textvariable=self.v['uyarlama_gorunum'], state='readonly',
+                                                 width=16, values=teklif_tasarim.UYARLAMA_GORUNUM))
+        alan('Teklif özeti:', ttk.Combobox(f1, textvariable=self.v['ozet_gorunum'], state='readonly', width=16,
+                                           values=teklif_tasarim.OZET_GORUNUM))
+        alan('Bakım bedeli:', ttk.Combobox(f1, textvariable=self.v['bakim_gorunum'], state='readonly', width=16,
+                                           values=teklif_tasarim.BAKIM_GORUNUM))
         fr = tk.Frame(f1)
         tk.Entry(fr, textvariable=self.logo, width=50).pack(side=tk.LEFT)
         _dugme(fr, 'Seç…', self._logo_sec, '#7f8c8d').pack(side=tk.LEFT, padx=3)
         _dugme(fr, 'Kaldır', lambda: self.logo.set(''), '#95a5a6').pack(side=tk.LEFT)
         alan('Logo (tüm tasarımlar):', fr)
-        tk.Label(f1, text='Kurumsal: logo solda, firma bilgileri sağda, ince çizgiler.\n'
-                          'Modern: renkli bant başlık, vurgulu bölüm başlıkları.\n'
-                          'Sade: siyah-beyaz, az renk, yazıcı dostu.', fg='#555', justify='left').grid(
-            row=satir, column=0, columnspan=2, sticky='w', pady=10)
+        tk.Label(f1, text='Uyarlama: Detaylı = kapsam + dayanak + hesap; Kalem listesi = hizmet ve kapsam; Özet = tek '
+                          'kutu (toplam tutar ve saat).\nTeklif özeti: Kısa = yalnız net / KDV / genel toplam; Gizle = '
+                          'özet bölümü basılmaz. Bakım anlaşmasını tamamen kapatmak için "Gösterilecek Alanlar".',
+                 fg='#555', justify='left', wraplength=880).grid(row=satir, column=0, columnspan=2, sticky='w',
+                                                                 pady=10)
 
         # Alanlar
         self.goster = {}
@@ -2082,17 +2211,27 @@ class TasarimPenceresi:
             tk.Checkbutton(f2, text=etiket, variable=v).grid(row=i % 12, column=i // 12, sticky='w', padx=8, pady=1)
             self.goster[k] = v
 
-        # Metinler
+        # Metinler (Turkce / Ingilizce) + sabit notlar
         self.metin = {}
-        for i, (k, etiket, yuk) in enumerate([('on_yazi', 'Ön yazı', 5), ('sartlar', 'Ticari şartlar (her satır '
-                                                                                    'bir madde)', 6),
-                                              ('kapanis', 'Kapanış', 2)]):
-            tk.Label(f3, text=etiket + ':', font=('Arial', 9, 'bold')).pack(anchor='w', pady=(6 if i else 0, 0))
-            w = tk.Text(f3, height=yuk, width=110, font=('Arial', 10), wrap='word')
-            w.pack(fill=tk.X)
-            self.metin[k] = w
+        mnb = ttk.Notebook(f3)
+        mnb.pack(fill=tk.BOTH, expand=True)
+        for son_ek, sekme_adi in (('', '  Türkçe  '), ('_en', '  English  ')):
+            fr = tk.Frame(mnb, padx=6, pady=4)
+            mnb.add(fr, text=sekme_adi)
+            for i, (k, etiket, yuk) in enumerate([('on_yazi', 'Ön yazı', 4),
+                                                  ('sartlar', 'Ticari şartlar (her satır bir madde, sabit)', 5),
+                                                  ('kapanis', 'Kapanış', 2)]):
+                tk.Label(fr, text=etiket + ':', font=('Arial', 9, 'bold')).pack(anchor='w', pady=(4 if i else 0, 0))
+                w = tk.Text(fr, height=yuk, width=110, font=('Arial', 10), wrap='word')
+                w.pack(fill=tk.X)
+                self.metin[k + son_ek] = w
+        tk.Label(f3, text='Sabit notlar (tüm tasarımlarda, her teklifin "Notlar" bölümünde):',
+                 font=('Arial', 9, 'bold')).pack(anchor='w', pady=(6, 0))
+        self.sabit_not = tk.Text(f3, height=3, width=110, font=('Arial', 10), wrap='word')
+        self.sabit_not.pack(fill=tk.X)
+        self.sabit_not.insert('1.0', ana.ayar.get('teklif_notlari') or '')
         tk.Label(f3, text='Kullanılabilen alanlar: {musteri} {yetkili} {tarih} {gecerlilik} {teklif_no} {firma} '
-                          '{hazirlayan}', fg='#555').pack(anchor='w', pady=6)
+                          '{hazirlayan}', fg='#555').pack(anchor='w', pady=4)
 
         # Firma
         self.firma = {}
@@ -2156,7 +2295,8 @@ class TasarimPenceresi:
 
     def _forma_yaz(self, ad, t):
         self.v['ad'].set(ad)
-        for k in ('sablon', 'ana_renk', 'vurgu_renk', 'baslik'):
+        for k in ('sablon', 'ana_renk', 'vurgu_renk', 'baslik', 'baslik_en', 'uyarlama_gorunum', 'ozet_gorunum',
+                  'bakim_gorunum'):
             self.v[k].set(t[k])
         self.v['yazi_boyutu'].set('%g' % t['yazi_boyutu'])
         for k, v in self.goster.items():
@@ -2169,6 +2309,8 @@ class TasarimPenceresi:
         return teklif_tasarim.tamamla({
             'sablon': self.v['sablon'].get(), 'ana_renk': self.v['ana_renk'].get().strip(),
             'vurgu_renk': self.v['vurgu_renk'].get().strip(), 'baslik': self.v['baslik'].get().strip(),
+            'baslik_en': self.v['baslik_en'].get().strip(),
+            **{k: self.v[k].get() for k in ('uyarlama_gorunum', 'ozet_gorunum', 'bakim_gorunum')},
             'yazi_boyutu': sayi_oku(self.v['yazi_boyutu'].get(), 9),
             'goster': {k: v.get() for k, v in self.goster.items()},
             **{k: w.get('1.0', 'end').strip() for k, w in self.metin.items()}})
@@ -2180,6 +2322,9 @@ class TasarimPenceresi:
                 deger = deger.replace(' | ', '\n')
             if str(self.ana.ayar.get(k, '') or '') != deger:
                 self.ana.veri.ayar_yaz(k, deger)
+        notlar = self.sabit_not.get('1.0', 'end').strip()
+        if (self.ana.ayar.get('teklif_notlari') or '') != notlar:
+            self.ana.veri.ayar_yaz('teklif_notlari', notlar)
         if (self.ana.ayar.get('logo_yolu') or '') != self.logo.get().strip():
             self.ana.veri.ayar_yaz('logo_yolu', self.logo.get().strip())
         self.ana.ayar = self.ana.veri.ayarlar()

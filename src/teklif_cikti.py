@@ -1,7 +1,8 @@
 """Musteriye gidecek teklif ciktisi: PDF (reportlab) ve Excel (openpyxl).
 
 Icerik once 'bolumler' listesine donusturulur, PDF ve Excel ayni listeden cizilir (iki format hep ayni icerik).
-Gorunum ve hangi alanlarin basilacagi 'tasarim'dan gelir (teklif_tasarim: Kurumsal / Modern / Sade).
+Gorunum ve hangi alanlarin basilacagi 'tasarim'dan gelir (teklif_tasarim: Kurumsal / Klasik / Kapakli / Seritli /
+Modern / Sade). Teklif TL, USD veya EUR (elle girilen kur) ve Turkce veya Ingilizce basilabilir.
 Ic bilgiler (maliyet, kar, rakip, komisyon, satis asistani) ciktiya YAZILMAZ.
 """
 import math
@@ -19,16 +20,73 @@ _FONT_ADAYLARI = [
     ('/Library/Fonts/Arial Unicode.ttf', '/Library/Fonts/Arial Unicode.ttf'),
 ]
 _ASCII = str.maketrans('çğıöşüÇĞİÖŞÜ★✔•', 'cgiosuCGIOSU*+-')
+DOVIZLER = ['TL', 'USD', 'EUR']
+
+# Ingilizce teklif icin sabit metinler (veri: paket adlari vb. oldugu gibi kalir)
+_EN = {
+    'Teklif No': 'Quote No', 'Tarih': 'Date', 'Geçerlilik': 'Valid until', 'Paket': 'Edition',
+    'Kullanıcı': 'Users', 'Müşteri': 'Customer', 'Yetkili': 'Contact person', 'Telefon': 'Phone',
+    'E-posta': 'E-mail', 'Adres': 'Address', 'VD / VKN': 'Tax office / No', 'Hazırlayan': 'Prepared by',
+    'İletişim': 'Contact', 'TEKLİFİ VEREN': 'FROM', 'TEKLİF EDİLEN': 'TO', 'Lisans': 'Licenses',
+    'Paket / Modül': 'Package / Module', 'Kapsam': 'Scope', 'Liste Tutarı': 'List Price', 'İndirim': 'Discount',
+    'Net Tutar': 'Net Amount', 'LİSANS TOPLAMI': 'LICENSE TOTAL',
+    'Ek +1 masaüstü kullanıcı bedeli': 'Each additional desktop user',
+    'Ek +1 mobil kullanıcı bedeli': 'Each additional mobile user',
+    'Yıllık bulut hizmet bedeli': 'Annual cloud service fee',
+    'Uyarlama Hizmeti (Kurulum, Aktarım, Eğitim ve Danışmanlık)':
+        'Implementation Services (Installation, Data Migration, Training and Consulting)',
+    'Hizmet': 'Service', 'Kapsam ve hesap dayanağı': 'Scope', 'Süre': 'Duration', 'Tutar': 'Amount',
+    'UYARLAMA TOPLAMI': 'IMPLEMENTATION TOTAL', 'UYARLAMA HİZMET BEDELİ': 'IMPLEMENTATION FEE',
+    'Uyarlama Hizmeti': 'Implementation Services', 'Lisans uyarlama payı': 'License configuration share',
+    'Teklif Özeti': 'Quote Summary', 'ARA TOPLAM': 'SUBTOTAL', 'NET TOPLAM (KDV Hariç)': 'NET TOTAL (excl. VAT)',
+    'GENEL TOPLAM (KDV Dahil)': 'GRAND TOTAL (incl. VAT)', 'KDV': 'VAT',
+    'Ödeme Seçenekleri': 'Payment Options', 'Ödeme Seçeneği': 'Payment option', 'Taksit': 'Installments',
+    'Taksit Tutarı (KDV Dahil)': 'Installment (incl. VAT)', 'Toplam (KDV Dahil)': 'Total (incl. VAT)',
+    'Not': 'Note', 'Tek ödeme': 'Single payment', 'Vade farksız': 'No interest',
+    'Bakım ve Destek Anlaşması Seçenekleri': 'Maintenance and Support Plans',
+    'Aylık (KDV Hr.)': 'Monthly (excl. VAT)', 'Yıllık (KDV Hr.)': 'Annual (excl. VAT)',
+    'Yanıt Süresi': 'Response time', 'Yerinde': 'On-site', 'Destek': 'Support',
+    'Yıllık Toplam Maliyet': 'Year Total Cost of Ownership', 'Yıl': 'Year', 'Lisans + Uyarlama': 'License + Services',
+    'DIA Yıllık Bakım': 'DIA Annual Maintenance', 'Destek Anlaşması': 'Support Plan',
+    'Toplam (KDV Hr.)': 'Total (excl. VAT)', 'KDV Dahil': 'Incl. VAT', 'TOPLAM': 'TOTAL',
+    'Ticari Şartlar': 'Terms and Conditions', 'Banka Bilgileri': 'Bank Details', 'Notlar': 'Notes',
+    'MÜŞTERİ ONAYI': 'CUSTOMER APPROVAL', 'İmza': 'Signature', 'Firma Kaşe / İmza': 'Company stamp / Signature',
+    'Yetkili Ad Soyad': 'Authorized name', 'Sayfa': 'Page', 'Teklif': 'Proposal',
+    'DIA yıllık bakım bedeli DIA\'nın güncel fiyatlarına göre tahminidir.':
+        'DIA annual maintenance is estimated from the current DIA price list.',
+    'Kapsam dışı': 'Out of scope', 'Hazırlayan kişi': 'Prepared by', 'Önerilen': 'Recommended',
+    'Seçilen': 'Selected', 'Revizyon': 'Revision',
+}
+_HIZMET_EN = {
+    'kurulum': ('Installation and configuration', 'Installation of packages, company / period / branch '
+                'definitions, parameters and user authorizations'),
+    'veri_aktarimi': ('Data migration', 'Cleansing and migration of customer, item and other records to DIA, '
+                      'opening balances'),
+    'egitim': ('User training', 'User group trainings'),
+    'rapor': ('Custom reports and forms', 'Customer-specific reports and form (invoice, delivery note) designs'),
+    'entegrasyon': ('Integrations', 'Setup of e-commerce, POS, bank and similar integrations'),
+    'canli_gecis': ('Go-live support', 'Go-live day and first week intensive support'),
+    'proje': ('Project management', 'Planning, coordination, testing and acceptance'),
+}
+_BAKIM_EN = {'Temel': 'Basic', 'Standart': 'Standard', 'Premium': 'Premium'}
 
 
 def para(x):
-    """1234567.8 -> '1.234.567,80 TL'"""
-    s = '{:,.2f}'.format(float(x or 0)).replace(',', 'X').replace('.', ',').replace('X', '.')
-    return s + ' TL'
+    """1234567.8 -> '1.234.567,80 TL' (ekranda ve TL tekliflerde)"""
+    return bicim(x)
 
 
-def _g(x):
-    return ('%g' % x).replace('.', ',') if isinstance(x, (int, float)) else str(x)
+def bicim(x, birim='TL', dil='TR'):
+    s = '{:,.2f}'.format(float(x or 0))
+    if dil != 'EN':
+        s = s.replace(',', 'X').replace('.', ',').replace('X', '.')
+    return s + ' ' + birim
+
+
+def _g(x, dil='TR'):
+    if not isinstance(x, (int, float)):
+        return str(x)
+    return '%g' % x if dil == 'EN' else ('%g' % x).replace('.', ',')
 
 
 def _tarih(girdi):
@@ -39,10 +97,47 @@ def _tarih(girdi):
         return datetime.now()
 
 
-def satir_aciklamasi(s):
+def doviz_bilgisi(girdi):
+    """(birim, kur): TL -> ('TL', 1). Kur elle girilir (1 USD = kur TL)."""
+    birim = str(girdi.get('doviz') or 'TL').upper()
+    if birim not in DOVIZLER:
+        birim = 'TL'
+    try:
+        kur = float(girdi.get('kur') or 0)
+    except (TypeError, ValueError):
+        kur = 0
+    if birim == 'TL' or kur <= 0:
+        return ('TL', 1.0) if birim == 'TL' or kur <= 0 else (birim, kur)
+    return birim, kur
+
+
+class _Dil:
+    """Teklifin dili ve para birimi: t('Lisans') -> 'Licenses', p(1000) -> '24,10 USD'."""
+    def __init__(self, girdi):
+        self.dil = 'EN' if str(girdi.get('dil') or '').upper().startswith('EN') else 'TR'
+        self.birim, self.kur = doviz_bilgisi(girdi)
+
+    def t(self, metin):
+        return _EN.get(metin, metin) if self.dil == 'EN' else metin
+
+    def deger(self, tl):
+        return round(float(tl or 0) / self.kur, 2)
+
+    def p(self, tl):
+        return bicim(self.deger(tl), self.birim, self.dil)
+
+    def g(self, x):
+        return _g(x, self.dil)
+
+    def saat(self, x):
+        return '%s %s' % (self.g(x), 'h' if self.dil == 'EN' else 'saat')
+
+
+def satir_aciklamasi(s, d=None):
+    en = d is not None and d.dil == 'EN'
     if s['tur'].lower().startswith(('mas', 'mob')):
-        return '%d kullanıcı' % s['adet']
-    return '%d adet' % s['adet'] if s['adet'] != 1 else ''
+        return (('%d user' if s['adet'] == 1 else '%d users') if en else '%d kullanıcı') % s['adet']
+    return (('%d pcs' if en else '%d adet') % s['adet']) if s['adet'] != 1 else ''
 
 
 def _kisa(metin, n=150):
@@ -54,71 +149,102 @@ def _kisa(metin, n=150):
 _IC_GEREKCE = ('Elle girildi', 'Kalibrasyon')
 
 
-def _sure(saat, ayar, gun=True):
+def _sure(saat, ayar, gun=True, d=None):
+    d = d or _Dil({})
     gun_saat = float(ayar.get('is_gunu_saat') or 0)
-    metin = '%s saat' % _g(saat)
+    metin = d.saat(saat)
     if gun and gun_saat > 0 and saat >= gun_saat / 2:
-        metin += '\n(≈ %s iş günü)' % _g(round(saat / gun_saat, 1))
+        metin += '\n(≈ %s %s)' % (d.g(round(saat / gun_saat, 1)), 'working days' if d.dil == 'EN' else 'iş günü')
     return metin
 
 
-def uyarlama_satirlari(s, ayar, goster=None):
-    """Uyarlama tablosu: her kalemin kapsami, neye gore hesaplandigi, suresi ve tutari."""
+def _hizmet_metni(k, d):
+    """Kalemin PDF'teki adi ve kapsami: teklife ozel ad > Ingilizce karsilik > tanimli ad."""
+    ad, kapsam = k['ad'], k['kapsam']
+    if d.dil == 'EN' and k['kod'] in _HIZMET_EN:
+        if not k.get('ozel_ad'):
+            ad = _HIZMET_EN[k['kod']][0]
+        if not k.get('ozel_kapsam'):
+            kapsam = _HIZMET_EN[k['kod']][1]
+    return ad, kapsam
+
+
+def uyarlama_satirlari(s, ayar, goster=None, d=None, gorunum='Detaylı'):
+    """Uyarlama tablosu: her kalemin kapsami, (Detayli'da) neye gore hesaplandigi, suresi ve tutari."""
     G = goster or teklif_tasarim.VARSAYILAN['goster']
+    d = d or _Dil({})
+    detayli = gorunum == 'Detaylı'
     u = s['uyarlama']
     rows = []
     for k in s['hizmet']['kalemler']:
         if not k['saat']:
             continue
+        ad, metin = _hizmet_metni(k, d)
         dayanak = [n for n in k.get('nedenler', []) if not n.startswith(_IC_GEREKCE)]
-        metin = k['kapsam']
-        if dayanak and G.get('uyarlama_dayanak', True):
+        if detayli and dayanak and G.get('uyarlama_dayanak', True) and d.dil == 'TR':
             metin += '\nDayanak: ' + '; '.join(dayanak)
-        if u['saat_ucreti'] and G.get('uyarlama_hesap', True):
-            metin += '\nHesap: %s saat × %s = %s' % (_g(k['saat']), para(u['saat_ucreti']), para(k['tutar']))
-        rows.append([k['ad'], metin.strip(), _sure(k['saat'], ayar, G.get('uyarlama_gun', True)), para(k['tutar'])])
+        if detayli and u['saat_ucreti'] and G.get('uyarlama_hesap', True):
+            metin += '\n%s: %s × %s = %s' % ('Calculation' if d.dil == 'EN' else 'Hesap', d.saat(k['saat']),
+                                             d.p(u['saat_ucreti']), d.p(k['tutar']))
+        rows.append([ad, metin.strip(), _sure(k['saat'], ayar, G.get('uyarlama_gun', True), d), d.p(k['tutar'])])
     if u['lisans_payi']:
-        metin = 'Satın alınan modüllerin firmanıza göre yapılandırılması, parametre ve sürüm uyumu.'
-        if G.get('uyarlama_hesap', True):
-            metin += '\nHesap: lisans net tutarı %s × %%%s = %s' % (
-                para(s['lisans']['net']), _g(float(ayar['lisans_yuzdesi'])), para(u['lisans_payi']))
-        rows.append(['Lisans uyarlama payı', metin, '', para(u['lisans_payi'])])
+        metin = ('Configuration of the purchased modules for your company, parameter and version compatibility.'
+                 if d.dil == 'EN' else
+                 'Satın alınan modüllerin firmanıza göre yapılandırılması, parametre ve sürüm uyumu.')
+        if detayli and G.get('uyarlama_hesap', True):
+            metin += '\n%s: %s × %%%s = %s' % ('Calculation: net license' if d.dil == 'EN' else 'Hesap: lisans net tutarı',
+                                               d.p(s['lisans']['net']), d.g(float(ayar['lisans_yuzdesi'])),
+                                               d.p(u['lisans_payi']))
+        rows.append([d.t('Lisans uyarlama payı'), metin, '', d.p(u['lisans_payi'])])
     if u['sinir']:
         alt = u['sinir'] == 'ALT SINIR'
-        rows.append(['Asgari uyarlama farkı' if alt else 'Azami uyarlama indirimi',
-                     'Uyarlama bedeli asgari tutara tamamlanmıştır.' if alt else
-                     'Uyarlama bedeli azami tutarla sınırlandırılmıştır.', '', para(u['net'] - u['ham'])])
-    rows.append(['UYARLAMA TOPLAMI', '', '%s saat' % _g(u['saat']), para(u['net'])])
+        if d.dil == 'EN':
+            rows.append(['Minimum fee adjustment' if alt else 'Maximum fee adjustment', '', '',
+                         d.p(u['net'] - u['ham'])])
+        else:
+            rows.append(['Asgari uyarlama farkı' if alt else 'Azami uyarlama indirimi',
+                         'Uyarlama bedeli asgari tutara tamamlanmıştır.' if alt else
+                         'Uyarlama bedeli azami tutarla sınırlandırılmıştır.', '', d.p(u['net'] - u['ham'])])
+    rows.append([d.t('UYARLAMA TOPLAMI'), '', d.saat(u['saat']), d.p(u['net'])])
     return rows
 
 
-def uyarlama_ozeti(s, ayar, goster=None):
+def uyarlama_ozeti(s, ayar, goster=None, d=None, kalemler_dahil=False):
     G = goster or teklif_tasarim.VARSAYILAN['goster']
+    d = d or _Dil({})
     u = s['uyarlama']
-    parca = ['KDV dahil %s' % para(u['dahil'])]
+    en = d.dil == 'EN'
+    parca = []
+    if kalemler_dahil:
+        adlar = [_hizmet_metni(k, d)[0] for k in s['hizmet']['kalemler'] if k['saat']]
+        if adlar:
+            parca.append(', '.join(adlar))
+    parca.append(('incl. VAT %s' if en else 'KDV dahil %s') % d.p(u['dahil']))
     if u['saat']:
-        parca.append('Toplam %s' % _sure(u['saat'], ayar, G.get('uyarlama_gun', True)).replace('\n', ' '))
-    if u['saat_ucreti']:
-        parca.append('Saat ücreti %s + KDV' % para(u['saat_ucreti']))
-    if u['lisans_payi']:
-        parca.append('Lisans uyarlama payı dahil')
+        parca.append(('Total %s' if en else 'Toplam %s') %
+                     _sure(u['saat'], ayar, G.get('uyarlama_gun', True), d).replace('\n', ' '))
+    if u['saat_ucreti'] and not kalemler_dahil:
+        parca.append(('Hourly rate %s + VAT' if en else 'Saat ücreti %s + KDV') % d.p(u['saat_ucreti']))
+    if u['lisans_payi'] and not kalemler_dahil:
+        parca.append('License configuration share included' if en else 'Lisans uyarlama payı dahil')
     return '  |  '.join(parca)
 
 
-def firma_satirlari(ayar):
+def firma_satirlari(ayar, d=None):
     """Teklifi veren firmanin iletisim satirlari (ad haric)."""
+    en = d is not None and d.dil == 'EN'
     satirlar = []
     if ayar.get('firma_adres'):
         satirlar.append(ayar['firma_adres'])
     iletisim = '  |  '.join(x for x in (
-        ('Tel: ' + ayar['firma_telefon']) if ayar.get('firma_telefon') else '',
+        (('Phone: ' if en else 'Tel: ') + ayar['firma_telefon']) if ayar.get('firma_telefon') else '',
         ayar.get('firma_eposta') or '', ayar.get('firma_web') or '') if x)
     if iletisim:
         satirlar.append(iletisim)
     if ayar.get('firma_iletisim'):
         satirlar.append(ayar['firma_iletisim'])
     if ayar.get('firma_vergi'):
-        satirlar.append('VD / VKN: ' + ayar['firma_vergi'])
+        satirlar.append(('Tax office / No: ' if en else 'VD / VKN: ') + ayar['firma_vergi'])
     return satirlar
 
 
@@ -126,69 +252,101 @@ def _hazirlayan(ayar):
     return [x for x in (ayar.get('hazirlayan_ad'), ayar.get('hazirlayan_unvan')) if x]
 
 
+def _odeme_adi(ad, d):
+    if d.dil != 'EN':
+        return ad
+    k = re.sub(r'\s+', ' ', ad.lower())
+    n = re.search(r'(\d+)\s*taksit', k)
+    if 'peşin' in k or 'pesin' in k:
+        return 'Advance payment (bank transfer)'
+    if 'kredi' in k:
+        return 'Credit card, %s installments' % n.group(1) if n else 'Credit card, single payment'
+    if 'havale' in k and n:
+        return 'Bank transfer, %s installments' % n.group(1)
+    if 'çek' in k or 'senet' in k:
+        return 'Post-dated cheque'
+    if n:
+        return '%s installments' % n.group(1)
+    return ad
+
+
 # ======================================================================
 # Icerik (bolumler)
 # ======================================================================
-# ('baslik', metin, alt) | ('bilgi', [(etiket, deger)]) | ('taraflar', veren[(e, d)], edilen[(e, d)])
+# ('kapak', baslik, alt, musteri, [(etiket, deger)]) -> yalniz Kapakli sablon cizer
+# ('baslik', metin, alt) | ('bilgi', [(etiket, deger)]) | ('taraflar', veren[(e, d)], edilen[(e, d)], basliklar)
 # ('paragraf', metin) | ('bolum', metin) | ('liste', [(etiket, deger)]) | ('maddeler', [metin])
 # ('tablo', basliklar, satirlar, {'sag': {kolon...}, 'toplam': bool, 'oran': [genislik...], 'vurgu': {satir...}})
-# ('ozet', [(etiket, tutar, kalin)], son_satir_vurgulu) | ('metin', metin, kucuk)
+# ('ozet', [(etiket, deger, kalin)], son_satir_vurgulu, birim, dil) | ('metin', metin, kucuk)
 # ('vurgu', etiket, buyuk_tutar_metni, alt_metin) | ('imza', veren_satirlari)
 def bolumler(girdi, s, ayar, tasarim=None):
     T = teklif_tasarim.tamamla(tasarim)
     G = T['goster']
+    d = _Dil(girdi)
+    t, en = d.t, d.dil == 'EN'
     B = []
     no = girdi.get('teklif_no') or '-'
     alt = []
     m = re.search(r'-R(\d+)$', no)
     if m:
-        alt.append('Revizyon %s' % m.group(1))
+        alt.append('%s %s' % (t('Revizyon'), m.group(1)))
     if girdi.get('etiket'):
-        alt.append(girdi['etiket'] + ' Teklif')
-    B.append(('baslik', T['baslik'] or 'TEKLİF', ' · '.join(alt)))
+        alt.append(girdi['etiket'] + ' ' + t('Teklif'))
+    baslik = (T['baslik_en'] if en else T['baslik']) or t('Teklif').upper()
 
     tarih = _tarih(girdi)
     gecerlilik = (tarih + timedelta(days=int(ayar.get('gecerlilik_gun') or 0))).strftime('%d.%m.%Y')
     mb = girdi.get('musteri_bilgi') or {}
-    degerler = {'musteri': girdi.get('musteri') or 'Firmanız', 'yetkili': mb.get('yetkili') or 'Yetkili',
+    degerler = {'musteri': girdi.get('musteri') or ('your company' if en else 'Firmanız'),
+                'yetkili': mb.get('yetkili') or ('Sir / Madam' if en else 'Yetkili'),
                 'tarih': tarih.strftime('%d.%m.%Y'), 'gecerlilik': gecerlilik, 'teklif_no': no,
                 'firma': ayar.get('firma_adi', ''), 'hazirlayan': ayar.get('hazirlayan_ad', '')}
-    kullanici = '%d masaüstü / %d mobil' % (int(girdi.get('masaustu') or 0), int(girdi.get('mobil') or 0))
-    bilgi = [('Teklif No', no), ('Tarih', tarih.strftime('%d.%m.%Y')), ('Geçerlilik', gecerlilik),
-             ('Paket', s['paket_tipi']), ('Kullanıcı', kullanici)]
+    kullanici = ('%d desktop / %d mobile' if en else '%d masaüstü / %d mobil') % (
+        int(girdi.get('masaustu') or 0), int(girdi.get('mobil') or 0))
+    kapak = [(t('Teklif No'), no), (t('Tarih'), tarih.strftime('%d.%m.%Y')), (t('Geçerlilik'), gecerlilik)]
+    if ayar.get('hazirlayan_ad'):
+        kapak.append((t('Hazırlayan'), ', '.join(_hazirlayan(ayar))))
+    B.append(('kapak', baslik, ' · '.join(alt), girdi.get('musteri', ''), kapak))
+    B.append(('baslik', baslik, ' · '.join(alt)))
+    bilgi = [(t('Teklif No'), no), (t('Tarih'), tarih.strftime('%d.%m.%Y')), (t('Geçerlilik'), gecerlilik),
+             (t('Paket'), s['paket_tipi']), (t('Kullanıcı'), kullanici)]
+    if d.birim != 'TL':
+        bilgi.append(('Currency' if en else 'Para birimi', '%s (1 %s = %s TL)' % (
+            d.birim, d.birim, bicim(d.kur, '', d.dil).strip())))
     if G['taraflar']:
-        veren = [('', ayar.get('firma_adi', ''))] + [('', x) for x in firma_satirlari(ayar)]
+        veren = [('', ayar.get('firma_adi', ''))] + [('', x) for x in firma_satirlari(ayar, d)]
         if G['hazirlayan'] and ayar.get('hazirlayan_ad'):
-            veren.append(('Hazırlayan', ', '.join(_hazirlayan(ayar))))
+            veren.append((t('Hazırlayan'), ', '.join(_hazirlayan(ayar))))
             iletisim = '  |  '.join(x for x in (ayar.get('hazirlayan_telefon'), ayar.get('hazirlayan_eposta')) if x)
             if iletisim:
-                veren.append(('İletişim', iletisim))
+                veren.append((t('İletişim'), iletisim))
         edilen = [('', girdi.get('musteri', ''))]
         for etiket, alan in (('Yetkili', 'yetkili'), ('Telefon', 'telefon'), ('E-posta', 'eposta'),
                              ('Adres', 'adres')):
             if mb.get(alan):
-                edilen.append((etiket, mb[alan]))
+                edilen.append((t(etiket), mb[alan]))
         if mb.get('vkn') or mb.get('vergi_dairesi'):
-            edilen.append(('VD / VKN', ' / '.join(x for x in (mb.get('vergi_dairesi'), mb.get('vkn')) if x)))
+            edilen.append((t('VD / VKN'), ' / '.join(x for x in (mb.get('vergi_dairesi'), mb.get('vkn')) if x)))
         B.append(('bilgi', bilgi))
-        B.append(('taraflar', veren, edilen))
+        B.append(('taraflar', veren, edilen, (t('TEKLİFİ VEREN'), t('TEKLİF EDİLEN'))))
     else:
-        bilgi.insert(2, ('Müşteri', girdi.get('musteri', '')))
+        bilgi.insert(2, (t('Müşteri'), girdi.get('musteri', '')))
         if mb.get('yetkili'):
-            bilgi.append(('Yetkili', mb['yetkili']))
+            bilgi.append((t('Yetkili'), mb['yetkili']))
         B.append(('bilgi', bilgi))
-    if G['on_yazi'] and (T['on_yazi'] or '').strip():
-        B.append(('paragraf', teklif_tasarim.yer_tutucu(T['on_yazi'].strip(), degerler)))
+    on_yazi = (T['on_yazi_en'] if en else T['on_yazi']) or ''
+    if G['on_yazi'] and on_yazi.strip():
+        B.append(('paragraf', teklif_tasarim.yer_tutucu(on_yazi.strip(), degerler)))
 
     # 1. Lisans
-    basliklar, oran = ['#', 'Paket / Modül'], [4, 0]
+    basliklar, oran = ['#', t('Paket / Modül')], [4, 0]
     if G['kullanici_kolonu']:
-        basliklar.append('Kapsam')
+        basliklar.append(t('Kapsam'))
         oran.append(12)
     if G['liste_indirim']:
-        basliklar += ['Liste Tutarı', 'İndirim']
+        basliklar += [t('Liste Tutarı'), t('İndirim')]
         oran += [16, 16]
-    basliklar.append('Net Tutar')
+    basliklar.append(t('Net Tutar'))
     oran.append(17)
     oran[1] = 100 - sum(oran)
     sag = set(range(3 if G['kullanici_kolonu'] else 2, len(basliklar)))
@@ -199,124 +357,164 @@ def bolumler(girdi, s, ayar, tasarim=None):
             ad += '\n' + _kisa(x['aciklama'])
         satir = [str(n), ad]
         if G['kullanici_kolonu']:
-            satir.append(satir_aciklamasi(x))
+            satir.append(satir_aciklamasi(x, d))
         if G['liste_indirim']:
-            ind = para(x['indirim']) if x['indirim'] else '-'
+            ind = d.p(x['indirim']) if x['indirim'] else '-'
             if x.get('kamp_ad'):
                 ind += '\n' + x['kamp_ad']
-            satir += [para(x['toplam']), ind]
-        satirlar.append(satir + [para(x['net'])])
-    toplam = ['', 'LİSANS TOPLAMI'] + ([''] if G['kullanici_kolonu'] else [])
+            satir += [d.p(x['toplam']), ind]
+        satirlar.append(satir + [d.p(x['net'])])
+    toplam = ['', t('LİSANS TOPLAMI')] + ([''] if G['kullanici_kolonu'] else [])
     if G['liste_indirim']:
-        toplam += [para(s['lisans']['toplam']), para(s['lisans']['indirim']) if s['lisans']['indirim'] else '-']
-    satirlar.append(toplam + [para(s['lisans']['net'])])
+        toplam += [d.p(s['lisans']['toplam']), d.p(s['lisans']['indirim']) if s['lisans']['indirim'] else '-']
+    satirlar.append(toplam + [d.p(s['lisans']['net'])])
     bol = 1
-    B.append(('bolum', '%d. Lisans' % bol))
+    B.append(('bolum', '%d. %s' % (bol, t('Lisans'))))
     B.append(('tablo', basliklar, satirlar, {'sag': sag, 'toplam': True, 'oran': oran}))
-    d = s.get('dia') or {}
-    if G['dia_ek_bilgi'] and d:
-        ek = [(e, para(v) + ' + KDV') for e, v in (('Ek +1 masaüstü kullanıcı bedeli', d.get('ek_masaustu')),
-                                                   ('Ek +1 mobil kullanıcı bedeli', d.get('ek_mobil')),
-                                                   ('Yıllık bulut hizmet bedeli', d.get('yillik_bulut'))) if v]
+    dia = s.get('dia') or {}
+    if G['dia_ek_bilgi'] and dia:
+        ek = [(t(e), d.p(v) + (' + VAT' if en else ' + KDV'))
+              for e, v in (('Ek +1 masaüstü kullanıcı bedeli', dia.get('ek_masaustu')),
+                           ('Ek +1 mobil kullanıcı bedeli', dia.get('ek_mobil')),
+                           ('Yıllık bulut hizmet bedeli', dia.get('yillik_bulut'))) if v]
         if ek:
             B.append(('liste', ek))
 
     # 2. Uyarlama hizmeti
     u = s['uyarlama']
     kalemler = [k for k in s['hizmet']['kalemler'] if k['saat']]
+    gorunum = T['uyarlama_gorunum']
     if kalemler or u['net']:
         bol += 1
-        B.append(('bolum', '%d. Uyarlama Hizmeti (Kurulum, Aktarım, Eğitim ve Danışmanlık)' % bol))
-        if G['uyarlama_aciklama'] and (ayar.get('uyarlama_aciklama') or '').strip():
-            B.append(('metin', ayar['uyarlama_aciklama'].strip(), False))
-        B.append(('tablo', ['Hizmet', 'Kapsam ve hesap dayanağı', 'Süre', 'Tutar'], uyarlama_satirlari(s, ayar, G),
-                  {'sag': {2, 3}, 'toplam': True, 'oran': [21, 46, 16, 17]}))
-        B.append(('vurgu', 'UYARLAMA HİZMET BEDELİ', '%s + KDV' % para(u['net']), uyarlama_ozeti(s, ayar, G)))
-        haric = (ayar.get('kapsam_haric') or '').strip() if G['kapsam_haric'] else ''
+        B.append(('bolum', '%d. %s' % (bol, t('Uyarlama Hizmeti (Kurulum, Aktarım, Eğitim ve Danışmanlık)'))))
+        aciklama = '' if en else (ayar.get('uyarlama_aciklama') or '').strip()
+        if G['uyarlama_aciklama'] and aciklama and gorunum != 'Özet':
+            B.append(('metin', aciklama, False))
+        if gorunum != 'Özet':
+            B.append(('tablo', [t('Hizmet'), t('Kapsam ve hesap dayanağı') if gorunum == 'Detaylı' else t('Kapsam'),
+                                t('Süre'), t('Tutar')], uyarlama_satirlari(s, ayar, G, d, gorunum),
+                      {'sag': {2, 3}, 'toplam': True, 'oran': [21, 46, 16, 17]}))
+        B.append(('vurgu', t('UYARLAMA HİZMET BEDELİ'), '%s + %s' % (d.p(u['net']), 'VAT' if en else 'KDV'),
+                  uyarlama_ozeti(s, ayar, G, d, kalemler_dahil=gorunum == 'Özet')))
+        haric = '' if en else ((ayar.get('kapsam_haric') or '').strip() if G['kapsam_haric'] else '')
         if u['saat_ucreti'] and G['kapsam_haric']:
-            haric += (' ' if haric else '') + 'Ek hizmet saat ücreti: %s + KDV.' % para(u['saat_ucreti'])
+            haric += (' ' if haric else '') + ('Additional services hourly rate: %s + VAT.' if en else
+                                              'Ek hizmet saat ücreti: %s + KDV.') % d.p(u['saat_ucreti'])
         if haric:
             B.append(('metin', haric, True))
 
     # Ozet
-    bol += 1
-    B.append(('bolum', '%d. Teklif Özeti' % bol))
-    ozet = [('Lisans', s['lisans']['net'], False),
-            ('Uyarlama Hizmeti (%s saat)' % _g(u['saat']) if u['saat'] else 'Uyarlama Hizmeti', u['net'], False)]
-    ozet += [(k['ad'], k['net'], False) for k in s['sabit']['kalemler']]
-    if s['seyahat']['tutar']:
-        ozet.append(('Yol / konaklama giderleri (%d gün yerinde)' % s['seyahat']['gun'], s['seyahat']['tutar'], False))
-    ozet.append(('ARA TOPLAM', s['ara_toplam'], True))
-    if s['kampanya']['tutar']:
-        ozet.append(('Kampanya İndirimi (%s, %%%s)' % (s['kampanya']['ad'], _g(s['kampanya']['yuzde'])),
-                     -s['kampanya']['tutar'], False))
-    ozet.append(('NET TOPLAM (KDV Hariç)', s['net_toplam'], True))
-    if G['ozet_kdv']:
-        ozet += [('KDV (%%%s)' % _g(s['kdv_orani']), s['kdv'], False),
-                 ('GENEL TOPLAM (KDV Dahil)', s['genel_toplam'], True)]
-    B.append(('ozet', ozet, True))
+    oz_gorunum = T['ozet_gorunum']
+    if oz_gorunum != 'Gizle':
+        bol += 1
+        B.append(('bolum', '%d. %s' % (bol, t('Teklif Özeti'))))
+        ozet = []
+        if oz_gorunum == 'Detaylı':
+            ozet = [(t('Lisans'), s['lisans']['net'], False),
+                    ('%s (%s)' % (t('Uyarlama Hizmeti'), d.saat(u['saat'])) if u['saat'] else t('Uyarlama Hizmeti'),
+                     u['net'], False)]
+            ozet += [(k['ad'], k['net'], False) for k in s['sabit']['kalemler']]
+            if s['seyahat']['tutar']:
+                ozet.append((('Travel and accommodation (%d days on-site)' if en else
+                              'Yol / konaklama giderleri (%d gün yerinde)') % s['seyahat']['gun'],
+                             s['seyahat']['tutar'], False))
+            ozet.append((t('ARA TOPLAM'), s['ara_toplam'], True))
+        if s['kampanya']['tutar']:
+            ozet.append(('%s (%s, %%%s)' % ('Campaign discount' if en else 'Kampanya İndirimi', s['kampanya']['ad'],
+                                            d.g(s['kampanya']['yuzde'])), -s['kampanya']['tutar'], False))
+        ozet.append((t('NET TOPLAM (KDV Hariç)'), s['net_toplam'], True))
+        if G['ozet_kdv']:
+            ozet += [('%s (%%%s)' % (t('KDV'), d.g(s['kdv_orani'])), s['kdv'], False),
+                     (t('GENEL TOPLAM (KDV Dahil)'), s['genel_toplam'], True)]
+        B.append(('ozet', [(a, d.deger(v), k) for a, v, k in ozet], True, d.birim, d.dil))
 
     # Odeme secenekleri
     od = [o for o in s['odeme'] if o['musteriye_goster']] if G['odeme'] else []
     if od:
         bol += 1
-        B.append(('bolum', '%d. Ödeme Seçenekleri' % bol))
+        B.append(('bolum', '%d. %s' % (bol, t('Ödeme Seçenekleri'))))
         rows = []
         for o in od:
             if o['indirim'] and o['tur'] == 'PESIN':
-                notu = '%%%s peşin indirim' % _g(o['indirim'])
+                notu = ('%%%s advance payment discount' if en else '%%%s peşin indirim') % d.g(o['indirim'])
             elif o['vade_farki']:
-                notu = '%%%s vade farkı' % _g(o['vade_farki'])
+                notu = ('%%%s interest' if en else '%%%s vade farkı') % d.g(o['vade_farki'])
             else:
-                notu = 'Vade farksız' if o['taksit'] > 1 else ''
-            rows.append([o['ad'], str(o['taksit']) if o['taksit'] > 1 else 'Tek ödeme',
-                         para(o['taksit_tutari']), para(o['dahil']), notu])
-        B.append(('tablo', ['Ödeme Seçeneği', 'Taksit', 'Taksit Tutarı (KDV Dahil)', 'Toplam (KDV Dahil)', 'Not'],
-                  rows, {'sag': {2, 3}, 'oran': [28, 12, 22, 22, 16]}))
+                notu = t('Vade farksız') if o['taksit'] > 1 else ''
+            rows.append([_odeme_adi(o['ad'], d), str(o['taksit']) if o['taksit'] > 1 else t('Tek ödeme'),
+                         d.p(o['taksit_tutari']), d.p(o['dahil']), notu])
+        B.append(('tablo', [t('Ödeme Seçeneği'), t('Taksit'), t('Taksit Tutarı (KDV Dahil)'), t('Toplam (KDV Dahil)'),
+                            t('Not')], rows, {'sag': {2, 3}, 'oran': [28, 12, 22, 22, 16]}))
 
-    # Bakim anlasmasi
+    # Bakim anlasmasi (genelde aylik)
     b = s.get('bakim') or {}
     if G['bakim'] and b.get('sun') and b.get('paketler') and s['satirlar']:
         bol += 1
-        B.append(('bolum', '%d. Bakım ve Destek Anlaşması Seçenekleri' % bol))
+        B.append(('bolum', '%d. %s' % (bol, t('Bakım ve Destek Anlaşması Seçenekleri'))))
+        bg = T['bakim_gorunum']
+        aylik = bg != 'Yıllık'
         rows, vurgu = [], set()
         for n, p in enumerate(b['paketler']):
-            ad = p['ad'] + (' ★ Önerilen' if p['onerilen'] else '') + (' ✔ Seçilen' if p['ad'] == b.get('secili') else '')
+            ad = (_BAKIM_EN.get(p['ad'], p['ad']) if en else p['ad'])
+            ad += (' ★ ' + t('Önerilen') if p['onerilen'] else '') + (' ✔ ' + t('Seçilen')
+                                                                      if p['ad'] == b.get('secili') else '')
             if p['onerilen'] or p['ad'] == b.get('secili'):
                 vurgu.add(n)
-            rows.append([ad, '%s saat' % _g(p['saat']), p['yanit'], _g(p['yerinde_gun']) + ' gün', p['aciklama'],
-                         para(p['yillik']), para(p['aylik'])])
-        B.append(('tablo', ['Paket', 'Yıllık Destek', 'Yanıt Süresi', 'Yerinde', 'Kapsam', 'Yıllık (KDV Hr.)',
-                            'Aylık (KDV Hr.)'], rows, {'sag': {5, 6}, 'oran': [16, 11, 11, 8, 28, 13, 13],
-                                                         'vurgu': vurgu}))
+            destek = ('%s / %s' % (d.saat(round(p['saat'] / 12, 1)), 'month' if en else 'ay')) if aylik else \
+                ('%s / %s' % (d.saat(p['saat']), 'year' if en else 'yıl'))
+            satir = [ad, destek, p['yanit'], d.g(p['yerinde_gun']) + (' days/yr' if en else ' gün/yıl'), p['aciklama']]
+            if bg == 'Aylık':
+                satir.append(d.p(p['aylik']))
+            elif bg == 'Yıllık':
+                satir.append(d.p(p['yillik']))
+            else:
+                satir += [d.p(p['aylik']), d.p(p['yillik'])]
+            rows.append(satir)
+        basliklar = [t('Paket'), t('Destek'), t('Yanıt Süresi'), t('Yerinde'), t('Kapsam')]
+        if bg == 'Aylık':
+            basliklar.append(t('Aylık (KDV Hr.)'))
+            oran, sag = [16, 12, 12, 10, 34, 16], {5}
+        elif bg == 'Yıllık':
+            basliklar.append(t('Yıllık (KDV Hr.)'))
+            oran, sag = [16, 12, 12, 10, 34, 16], {5}
+        else:
+            basliklar += [t('Aylık (KDV Hr.)'), t('Yıllık (KDV Hr.)')]
+            oran, sag = [15, 11, 11, 9, 28, 13, 13], {5, 6}
+        B.append(('tablo', basliklar, rows, {'sag': sag, 'oran': oran, 'vurgu': vurgu}))
 
     # Toplam sahip olma maliyeti
-    t = s.get('tco') or {}
-    if G['tco'] and t.get('yillar') and (s['ybh']['yillik']['net'] or any(y['bakim'] for y in t['yillar'])):
+    tco = s.get('tco') or {}
+    if G['tco'] and tco.get('yillar') and (s['ybh']['yillik']['net'] or any(y['bakim'] for y in tco['yillar'])):
         bol += 1
-        B.append(('bolum', '%d. %d Yıllık Toplam Maliyet' % (bol, len(t['yillar']))))
-        rows = [['%d. yıl' % y['yil'], para(y['tek_seferlik']) if y['tek_seferlik'] else '-',
-                 para(y['ybh']) if y['ybh'] else '-', para(y['bakim']) if y['bakim'] else '-', para(y['toplam']),
-                 para(y['dahil'])] for y in t['yillar']]
-        rows.append(['TOPLAM', '', '', '', para(t['toplam']), para(t['dahil'])])
-        B.append(('tablo', ['Yıl', 'Lisans + Uyarlama', 'DIA Yıllık Bakım', 'Destek Anlaşması', 'Toplam (KDV Hr.)',
-                            'KDV Dahil'], rows, {'sag': {1, 2, 3, 4, 5}, 'toplam': True,
-                                                  'oran': [10, 18, 18, 18, 18, 18]}))
-        B.append(('metin', 'DIA yıllık bakım bedeli DIA\'nın güncel fiyatlarına göre tahminidir.', True))
+        B.append(('bolum', '%d. %d %s' % (bol, len(tco['yillar']), t('Yıllık Toplam Maliyet'))))
+        rows = [[('Year %d' if en else '%d. yıl') % y['yil'], d.p(y['tek_seferlik']) if y['tek_seferlik'] else '-',
+                 d.p(y['ybh']) if y['ybh'] else '-', d.p(y['bakim']) if y['bakim'] else '-', d.p(y['toplam']),
+                 d.p(y['dahil'])] for y in tco['yillar']]
+        rows.append([t('TOPLAM'), '', '', '', d.p(tco['toplam']), d.p(tco['dahil'])])
+        B.append(('tablo', [t('Yıl'), t('Lisans + Uyarlama'), t('DIA Yıllık Bakım'), t('Destek Anlaşması'),
+                            t('Toplam (KDV Hr.)'), t('KDV Dahil')], rows,
+                  {'sag': {1, 2, 3, 4, 5}, 'toplam': True, 'oran': [10, 18, 18, 18, 18, 18]}))
+        B.append(('metin', t('DIA yıllık bakım bedeli DIA\'nın güncel fiyatlarına göre tahminidir.'), True))
 
-    if G['sartlar'] and (T['sartlar'] or '').strip():
-        B.append(('bolum', 'Ticari Şartlar'))
-        B.append(('maddeler', [x.strip() for x in teklif_tasarim.yer_tutucu(T['sartlar'], degerler).split('\n')
+    sartlar = (T['sartlar_en'] if en else T['sartlar']) or ''
+    if d.birim != 'TL':
+        sartlar += ('\nAmounts are calculated at 1 %s = %s TL; invoicing in TL at the exchange rate of the invoice '
+                    'date.' if en else '\nTutarlar 1 %s = %s TL kuru ile hesaplanmıştır; faturalama fatura '
+                    'tarihindeki kur üzerinden TL olarak yapılır.') % (d.birim, bicim(d.kur, '', d.dil).strip())
+    if G['sartlar'] and sartlar.strip():
+        B.append(('bolum', t('Ticari Şartlar')))
+        B.append(('maddeler', [x.strip() for x in teklif_tasarim.yer_tutucu(sartlar, degerler).split('\n')
                                if x.strip()]))
     if G['banka'] and (ayar.get('firma_banka') or '').strip():
-        B.append(('bolum', 'Banka Bilgileri'))
+        B.append(('bolum', t('Banka Bilgileri')))
         B.append(('metin', ayar['firma_banka'].strip(), False))
     notlar = '\n'.join(x for x in [ayar.get('teklif_notlari', ''), girdi.get('notlar', '')] if x)
     if G['notlar'] and notlar:
-        B.append(('bolum', 'Notlar'))
+        B.append(('bolum', t('Notlar')))
         B.append(('metin', notlar, True))
-    if (T['kapanis'] or '').strip():
-        B.append(('paragraf', teklif_tasarim.yer_tutucu(T['kapanis'].strip(), degerler)))
+    kapanis = (T['kapanis_en'] if en else T['kapanis']) or ''
+    if kapanis.strip():
+        B.append(('paragraf', teklif_tasarim.yer_tutucu(kapanis.strip(), degerler)))
     if G['imza']:
         B.append(('imza', [ayar.get('firma_adi', '')] + (_hazirlayan(ayar) if G['hazirlayan'] else [])))
     return B
@@ -325,6 +523,7 @@ def bolumler(girdi, s, ayar, tasarim=None):
 def karsilastirma_bolumleri(teklifler, ayar, tasarim=None):
     """teklifler: [(girdi, sonuc)] -> alternatif teklif karsilastirmasi."""
     G = teklif_tasarim.tamamla(tasarim)['goster']
+    d = _Dil(teklifler[0][0])
     B = [('baslik', 'DİA ERP TEKLİF SEÇENEKLERİ', 'Karşılaştırma')]
     ilk = teklifler[0][0]
     B.append(('bilgi', [('Müşteri', ilk.get('musteri', '')), ('Tarih', datetime.now().strftime('%d.%m.%Y'))]))
@@ -334,16 +533,16 @@ def karsilastirma_bolumleri(teklifler, ayar, tasarim=None):
         ['Paket tipi'] + [s['paket_tipi'] for _, s in teklifler],
         ['Kullanıcı'] + ['%s masaüstü / %s mobil' % (g.get('masaustu', 0), g.get('mobil', 0)) for g, _ in teklifler],
         ['Paketler'] + ['\n'.join(x['ad'] for x in s['satirlar']) for _, s in teklifler],
-        ['Lisans'] + [para(s['lisans']['net']) for _, s in teklifler],
-        ['Uyarlama'] + ['%s\n(%s saat)' % (para(s['uyarlama']['net']), _g(s['uyarlama']['saat'])) for _, s in teklifler],
-        ['Diğer (sabit, yol)'] + [para(s['sabit']['net'] + s['seyahat']['tutar']) for _, s in teklifler],
-        ['Kampanya indirimi'] + [para(-s['kampanya']['tutar']) if s['kampanya']['tutar'] else '-' for _, s in teklifler],
-        ['NET TOPLAM (KDV Hariç)'] + [para(s['net_toplam']) for _, s in teklifler],
-        ['GENEL TOPLAM (KDV Dahil)'] + [para(s['genel_toplam']) for _, s in teklifler],
+        ['Lisans'] + [d.p(s['lisans']['net']) for _, s in teklifler],
+        ['Uyarlama'] + ['%s\n(%s saat)' % (d.p(s['uyarlama']['net']), _g(s['uyarlama']['saat'])) for _, s in teklifler],
+        ['Diğer (sabit, yol)'] + [d.p(s['sabit']['net'] + s['seyahat']['tutar']) for _, s in teklifler],
+        ['Kampanya indirimi'] + [d.p(-s['kampanya']['tutar']) if s['kampanya']['tutar'] else '-' for _, s in teklifler],
+        ['NET TOPLAM (KDV Hariç)'] + [d.p(s['net_toplam']) for _, s in teklifler],
+        ['GENEL TOPLAM (KDV Dahil)'] + [d.p(s['genel_toplam']) for _, s in teklifler],
     ]
     if all(s.get('tco') for _, s in teklifler):
         satirlar.append(['%d yıllık toplam maliyet' % len(teklifler[0][1]['tco']['yillar'])] +
-                        [para(s['tco']['dahil']) for _, s in teklifler])
+                        [d.p(s['tco']['dahil']) for _, s in teklifler])
     oran = [24] + [76 // len(teklifler)] * len(teklifler)
     B.append(('tablo', basliklar, satirlar, {'sag': set(range(1, len(teklifler) + 1)), 'oran': oran,
                                             'vurgu': {7, 8}}))
@@ -372,18 +571,23 @@ def _fontlar():
     return 'Helvetica', 'Helvetica-Bold', _ASCII
 
 
-def _pdf_ciz(yol, B, ayar, belge_no, tasarim=None):
+def _pdf_ciz(yol, B, ayar, belge_no, tasarim=None, dil='TR'):
     from reportlab.lib import colors
-    from reportlab.lib.enums import TA_RIGHT
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import mm
     from reportlab.pdfgen import canvas as rl_canvas
-    from reportlab.platypus import Image, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import (Image, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table,
+                                    TableStyle)
 
     T = teklif_tasarim.tamamla(tasarim)
     G, sablon, fs = T['goster'], T['sablon'], float(T['yazi_boyutu'])
-    sade, modern = sablon == 'Sade', sablon == 'Modern'
+    sade, modern, klasik = sablon == 'Sade', sablon == 'Modern', sablon == 'Klasik'
+    kapakli, seritli = sablon == 'Kapaklı', sablon == 'Şeritli'
+
+    def tt(m):
+        return _EN.get(m, m) if dil == 'EN' else m
     font, kalin, cevir = _fontlar()
     renk = colors.HexColor
     ana, vurgu = renk(T['ana_renk']), renk(T['vurgu_renk'])
@@ -392,7 +596,8 @@ def _pdf_ciz(yol, B, ayar, belge_no, tasarim=None):
     vurgu_acik = renk(teklif_tasarim.acik_ton(T['vurgu_renk'], 0.8))
     gri, gri_yazi, beyaz = renk('#cccccc'), renk('#555555'), colors.white
     tablo_bas_zemin, tablo_bas_yazi = (renk('#eeeeee'), colors.black) if sade else (ana, beyaz)
-    genislik = A4[0] - 32 * mm
+    sol_bosluk = 24 * mm if seritli else 16 * mm
+    genislik = A4[0] - sol_bosluk - 16 * mm
 
     def t(metin):
         metin = str(metin)
@@ -416,10 +621,33 @@ def _pdf_ciz(yol, B, ayar, belge_no, tasarim=None):
                 return None
         return None
 
-    # ---------------------------------------------------------------- ust bilgi (logo + firma)
     akis = []
     firma_adi = ayar.get('firma_adi', '')
-    satirlar = firma_satirlari(ayar)
+    d_ = _Dil({'dil': dil})
+    satirlar = firma_satirlari(ayar, d_)
+
+    # ---------------------------------------------------------------- kapak (Kapakli)
+    kapak = next((b for b in B if b[0] == 'kapak'), None)
+    if kapakli and kapak:
+        _, baslik, alt, musteri, bilgiler = kapak
+        resim = logo_resmi(90 * mm, 40 * mm)
+        akis += [Spacer(1, 30 * mm)]
+        if resim:
+            resim.hAlign = 'CENTER'
+            akis += [resim, Spacer(1, 10 * mm)]
+        akis += [P(firma_adi, fs + 8, True, TA_CENTER, ana), Spacer(1, 25 * mm),
+                 Table([['']], colWidths=[genislik * 0.4], rowHeights=[2], style=[
+                     ('BACKGROUND', (0, 0), (-1, -1), vurgu)]), Spacer(1, 8 * mm),
+                 P(baslik, fs + 9, True, TA_CENTER, ana)]
+        if alt:
+            akis.append(P(alt, fs + 2, hiza=TA_CENTER, rnk=vurgu))
+        akis += [Spacer(1, 14 * mm), P(musteri, fs + 7, True, TA_CENTER), Spacer(1, 18 * mm)]
+        tb = Table([[P(e, fs + 1, True, TA_RIGHT, gri_yazi), P(v, fs + 1)] for e, v in bilgiler],
+                   colWidths=[genislik * 0.45, genislik * 0.55])
+        tb.setStyle(TableStyle([('TOPPADDING', (0, 0), (-1, -1), 3)]))
+        akis += [tb, PageBreak()]
+
+    # ---------------------------------------------------------------- ust bilgi (logo + firma)
     if modern:
         yazi = [P(firma_adi, fs + 7, True, rnk=beyaz)] + [P(x, fs - 1, rnk=renk('#e8eef2')) for x in satirlar]
         resim = logo_resmi(48 * mm, 20 * mm)
@@ -432,6 +660,18 @@ def _pdf_ciz(yol, B, ayar, belge_no, tasarim=None):
             stil += [('BACKGROUND', (0, 0), (0, 0), beyaz), ('ALIGN', (0, 0), (0, 0), 'CENTER')]
         ust.setStyle(TableStyle(stil))
         akis += [ust, Spacer(1, 2 * mm)]
+    elif klasik:
+        resim = logo_resmi(60 * mm, 22 * mm)
+        if resim:
+            resim.hAlign = 'CENTER'
+            akis.append(resim)
+        akis.append(P(firma_adi, fs + 6, True, TA_CENTER, ana))
+        akis += [P(x, fs - 1.5, hiza=TA_CENTER, rnk=gri_yazi) for x in satirlar]
+        akis += [Spacer(1, 2 * mm),
+                 Table([['']], colWidths=[genislik], rowHeights=[1.6], style=[('BACKGROUND', (0, 0), (-1, -1), ana)]),
+                 Spacer(1, 0.8 * mm),
+                 Table([['']], colWidths=[genislik], rowHeights=[0.6], style=[('BACKGROUND', (0, 0), (-1, -1), vurgu)]),
+                 Spacer(1, 5 * mm)]
     else:
         yazi = [P(firma_adi, fs + 6, True, TA_RIGHT, colors.black if sade else ana)] + \
                [P(x, fs - 1.5, hiza=TA_RIGHT, rnk=gri_yazi) for x in satirlar]
@@ -452,6 +692,18 @@ def _pdf_ciz(yol, B, ayar, belge_no, tasarim=None):
             tb = Table([['', P(metin, fs + 3, True, rnk=ana)]], colWidths=[2.5 * mm, genislik - 2.5 * mm])
             tb.setStyle(TableStyle([('BACKGROUND', (0, 0), (0, 0), vurgu), ('LEFTPADDING', (1, 0), (1, 0), 6),
                                     ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2)]))
+        elif klasik:
+            tb = Table([[P(metin.upper(), fs + 1.5, True, rnk=ana)]], colWidths=[genislik])
+            tb.setStyle(TableStyle([('LINEABOVE', (0, 0), (-1, -1), 0.6, vurgu),
+                                    ('LINEBELOW', (0, 0), (-1, -1), 0.6, vurgu),
+                                    ('LEFTPADDING', (0, 0), (-1, -1), 0), ('TOPPADDING', (0, 0), (-1, -1), 3),
+                                    ('BOTTOMPADDING', (0, 0), (-1, -1), 3)]))
+        elif seritli:
+            tb = Table([[P(metin, fs + 3, True, rnk=ana)], ['']], colWidths=[genislik], rowHeights=[None, 1.6])
+            tb.setStyle(TableStyle([('BACKGROUND', (0, 1), (0, 1), vurgu), ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                                    ('BOTTOMPADDING', (0, 0), (-1, 0), 2), ('TOPPADDING', (0, 1), (-1, 1), 0),
+                                    ('BOTTOMPADDING', (0, 1), (-1, 1), 0), ('RIGHTPADDING', (0, 1), (-1, 1),
+                                                                            genislik - 30 * mm)]))
         else:
             tb = Table([[P(metin, fs + (2 if sade else 3), True, rnk=colors.black if sade else ana)]],
                        colWidths=[genislik])
@@ -494,9 +746,10 @@ def _pdf_ciz(yol, B, ayar, belge_no, tasarim=None):
                     ('BACKGROUND', (0, 0), (-1, -1), vurgu), ('TOPPADDING', (0, 0), (-1, -1), 6),
                     ('BOTTOMPADDING', (0, 0), (-1, -1), 6), ('LEFTPADDING', (0, 0), (-1, -1), 8)]))
             else:
-                akis.append(P(b[1], fs + 7, True, rnk=colors.black if sade else ana))
+                hiza = TA_CENTER if klasik else None
+                akis.append(P(b[1], fs + 7, True, hiza, colors.black if sade else ana))
                 if b[2]:
-                    akis.append(P(b[2], fs + 1, rnk=gri_yazi if sade else vurgu))
+                    akis.append(P(b[2], fs + 1, hiza=hiza, rnk=gri_yazi if sade else vurgu))
             akis.append(Spacer(1, 3 * mm))
         elif tur == 'bilgi':
             ciftler = b[1]
@@ -517,7 +770,8 @@ def _pdf_ciz(yol, B, ayar, belge_no, tasarim=None):
             akis += [tb, Spacer(1, 3 * mm)]
         elif tur == 'taraflar':
             yarim = (genislik - 6 * mm) / 2
-            tb = Table([[kutu('TEKLİFİ VEREN', b[1], yarim), '', kutu('TEKLİF EDİLEN', b[2], yarim)]],
+            bas = b[3] if len(b) > 3 else ('TEKLİFİ VEREN', 'TEKLİF EDİLEN')
+            tb = Table([[kutu(bas[0], b[1], yarim), '', kutu(bas[1], b[2], yarim)]],
                        colWidths=[yarim, 6 * mm, yarim])
             tb.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0),
                                     ('RIGHTPADDING', (0, 0), (-1, -1), 0)]))
@@ -542,6 +796,8 @@ def _pdf_ciz(yol, B, ayar, belge_no, tasarim=None):
                     ('ROWBACKGROUNDS', (0, 1), (-1, -1), [beyaz, renk('#fafafa') if sade else ana_cok_acik])]
             if sade:
                 stil.append(('LINEABOVE', (0, 0), (-1, 0), 0.8, colors.black))
+            if klasik:
+                stil.append(('LINEBELOW', (0, 0), (-1, 0), 1.2, vurgu))
             if sec.get('toplam'):
                 stil.append(('BACKGROUND', (0, -1), (-1, -1), renk('#eeeeee') if sade else ana_acik))
             for r in sec.get('vurgu', ()):
@@ -572,14 +828,18 @@ def _pdf_ciz(yol, B, ayar, belge_no, tasarim=None):
                                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'), ('TOPPADDING', (0, 0), (-1, 0), 6),
                                        ('BOTTOMPADDING', (0, 1), (-1, 1), 6), ('LEFTPADDING', (0, 0), (-1, -1), 8),
                                        ('RIGHTPADDING', (0, 0), (-1, -1), 8)]))
-            if akis and isinstance(akis[-1], Spacer):
-                akis.pop()
-            akis += [Spacer(1, 1 * mm), KeepTogether([kutu_]), Spacer(1, 3 * mm)]
+            if bekleyen:          # Ozet gorunumde bolum basligi dogrudan kutuya baglanir
+                ekle([kutu_], 3)
+            else:
+                if akis and isinstance(akis[-1], Spacer):
+                    akis.pop()
+                akis += [Spacer(1, 1 * mm), KeepTogether([kutu_]), Spacer(1, 3 * mm)]
         elif tur == 'ozet':
-            veri = [[P(a, fs, k), P(para(v), fs, k, TA_RIGHT)] for a, v, k in b[1]]
+            birim, odil = (b[3], b[4]) if len(b) > 4 else ('TL', 'TR')
+            veri = [[P(a, fs, k), P(bicim(v, birim, odil), fs, k, TA_RIGHT)] for a, v, k in b[1]]
             if b[2]:
                 a, v, _ = b[1][-1]
-                veri[-1] = [P(a, fs + 1, True, rnk=beyaz), P(para(v), fs + 1, True, TA_RIGHT, beyaz)]
+                veri[-1] = [P(a, fs + 1, True, rnk=beyaz), P(bicim(v, birim, odil), fs + 1, True, TA_RIGHT, beyaz)]
             tb = Table(veri, colWidths=[None, 52 * mm])
             stil = [('LINEBELOW', (0, 0), (-1, -1), 0.3, gri)]
             if b[2]:
@@ -594,13 +854,13 @@ def _pdf_ciz(yol, B, ayar, belge_no, tasarim=None):
             veren = b[1] if tur == 'imza' else [firma_adi]
             yarim = (genislik - 10 * mm) / 2
             baslik_rengi = colors.black if sade else ana
-            sol = [P('TEKLİFİ VEREN', fs + 1, True, rnk=baslik_rengi)] + \
+            sol = [P(tt('TEKLİFİ VEREN'), fs + 1, True, rnk=baslik_rengi)] + \
                   [P(x, fs, i == 0) for i, x in enumerate(veren) if x] + \
-                  [Spacer(1, 10 * mm), P('İmza: _______________________', fs)]
-            sag_ = [P('MÜŞTERİ ONAYI', fs + 1, True, rnk=baslik_rengi),
-                    P('Firma Kaşe / İmza: _______________________', fs), Spacer(1, 3 * mm),
-                    P('Yetkili Ad Soyad: _______________________', fs), Spacer(1, 3 * mm),
-                    P('Tarih: _______________________', fs)]
+                  [Spacer(1, 10 * mm), P(tt('İmza') + ': _______________________', fs)]
+            sag_ = [P(tt('MÜŞTERİ ONAYI'), fs + 1, True, rnk=baslik_rengi),
+                    P(tt('Firma Kaşe / İmza') + ': _______________________', fs), Spacer(1, 3 * mm),
+                    P(tt('Yetkili Ad Soyad') + ': _______________________', fs), Spacer(1, 3 * mm),
+                    P(tt('Tarih') + ': _______________________', fs)]
             tb = Table([[sol, '', sag_]], colWidths=[yarim, 10 * mm, yarim])
             tb.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'),
                                     ('LINEABOVE', (0, 0), (0, 0), 0.8, gri), ('LINEABOVE', (2, 0), (2, 0), 0.8, gri),
@@ -610,17 +870,30 @@ def _pdf_ciz(yol, B, ayar, belge_no, tasarim=None):
     alt_metin = '  ·  '.join(x for x in (firma_adi, ayar.get('firma_telefon'), ayar.get('firma_eposta'),
                                          ayar.get('firma_web')) if x)
 
-    def alt_bilgi(tuval, sayfa, toplam):
-        if not G['alt_bilgi']:
-            return
+    def sayfa_cizimi(tuval, sayfa, toplam):
         tuval.saveState()
-        tuval.setStrokeColor(gri if sade else ana)
-        tuval.setLineWidth(0.6)
-        tuval.line(16 * mm, 12.5 * mm, A4[0] - 16 * mm, 12.5 * mm)
-        tuval.setFont(font, 7)
-        tuval.setFillColor(renk('#777777'))
-        tuval.drawString(16 * mm, 8.5 * mm, t(alt_metin))
-        tuval.drawRightString(A4[0] - 16 * mm, 8.5 * mm, t('%s  ·  Sayfa %d / %d' % (belge_no, sayfa, toplam)))
+        if seritli:          # her sayfada solda renkli serit
+            tuval.setFillColor(ana)
+            tuval.rect(0, 0, 9 * mm, A4[1], stroke=0, fill=1)
+            tuval.setFillColor(vurgu)
+            tuval.rect(9 * mm, 0, 1.5 * mm, A4[1], stroke=0, fill=1)
+        if kapakli and sayfa == 1:
+            tuval.setFillColor(ana)
+            tuval.rect(0, 0, A4[0], 14 * mm, stroke=0, fill=1)
+            tuval.setFillColor(vurgu)
+            tuval.rect(0, 14 * mm, A4[0], 1.5 * mm, stroke=0, fill=1)
+            tuval.setFont(font, 8)
+            tuval.setFillColor(beyaz)
+            tuval.drawCentredString(A4[0] / 2, 5.5 * mm, t(alt_metin))
+        elif G['alt_bilgi']:
+            tuval.setStrokeColor(gri if sade else ana)
+            tuval.setLineWidth(0.6)
+            tuval.line(sol_bosluk, 12.5 * mm, A4[0] - 16 * mm, 12.5 * mm)
+            tuval.setFont(font, 7)
+            tuval.setFillColor(renk('#777777'))
+            tuval.drawString(sol_bosluk, 8.5 * mm, t(alt_metin))
+            tuval.drawRightString(A4[0] - 16 * mm, 8.5 * mm, t('%s  ·  %s %d / %d' % (belge_no, tt('Sayfa'), sayfa,
+                                                                                       toplam)))
         tuval.restoreState()
 
     class SayfaliTuval(rl_canvas.Canvas):
@@ -637,11 +910,11 @@ def _pdf_ciz(yol, B, ayar, belge_no, tasarim=None):
             toplam = len(self._sayfalar)
             for n, durum in enumerate(self._sayfalar, 1):
                 self.__dict__.update(durum)
-                alt_bilgi(self, n, toplam)
+                sayfa_cizimi(self, n, toplam)
                 super().showPage()
             super().save()
 
-    belge = SimpleDocTemplate(yol, pagesize=A4, leftMargin=16 * mm, rightMargin=16 * mm, topMargin=14 * mm,
+    belge = SimpleDocTemplate(yol, pagesize=A4, leftMargin=sol_bosluk, rightMargin=16 * mm, topMargin=14 * mm,
                               bottomMargin=18 * mm, title=t(belge_no), author=t(firma_adi))
     belge.build(akis, canvasmaker=SayfaliTuval)
     return yol
@@ -650,12 +923,15 @@ def _pdf_ciz(yol, B, ayar, belge_no, tasarim=None):
 # ======================================================================
 # Excel
 # ======================================================================
-def _excel_ciz(yol, B, ayar, sayfa_adi='Teklif', tasarim=None):
+def _excel_ciz(yol, B, ayar, sayfa_adi='Teklif', tasarim=None, dil='TR'):
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
     T = teklif_tasarim.tamamla(tasarim)
     G, sade = T['goster'], T['sablon'] == 'Sade'
+
+    def tt(m):
+        return _EN.get(m, m) if dil == 'EN' else m
     ana, vurgu = T['ana_renk'][1:], T['vurgu_renk'][1:]
     wb = Workbook()
     ws = wb.active
@@ -706,15 +982,16 @@ def _excel_ciz(yol, B, ayar, sayfa_adi='Teklif', tasarim=None):
         except Exception:
             logo_var = False
     ad_font = Font(size=16, bold=True, color='000000' if sade else ana)
+    firma_s = firma_satirlari(ayar, _Dil({'dil': dil}))
     if logo_var:
         birlesik(1, ayar.get('firma_adi', ''), ad_font, 4, 7, Alignment(horizontal='right'))
-        for i, x in enumerate(firma_satirlari(ayar)[:3], 2):
+        for i, x in enumerate(firma_s[:3], 2):
             birlesik(i, x, Font(size=9, color='555555'), 4, 7, Alignment(horizontal='right'))
         r = 5
     else:
         ws.cell(1, 1, ayar.get('firma_adi', '')).font = ad_font
         r = 2
-        for x in firma_satirlari(ayar):
+        for x in firma_s:
             ws.cell(r, 1, x).font = Font(size=9, color='555555')
             r += 1
     for c in range(1, 8):
@@ -723,6 +1000,8 @@ def _excel_ciz(yol, B, ayar, sayfa_adi='Teklif', tasarim=None):
 
     for b in B:
         tur = b[0]
+        if tur == 'kapak':
+            continue
         if tur == 'baslik':
             zemin = None if sade else (dolgu(vurgu) if T['sablon'] == 'Modern' else ana_f)
             birlesik(r, b[1] + ('  -  ' + b[2] if b[2] else ''),
@@ -737,7 +1016,8 @@ def _excel_ciz(yol, B, ayar, sayfa_adi='Teklif', tasarim=None):
                 r += 1
             r += 1
         elif tur == 'taraflar':
-            for c1, baslik, satirlar_ in ((1, 'TEKLİFİ VEREN', b[1]), (5, 'TEKLİF EDİLEN', b[2])):
+            bas = b[3] if len(b) > 3 else ('TEKLİFİ VEREN', 'TEKLİF EDİLEN')
+            for c1, baslik, satirlar_ in ((1, bas[0], b[1]), (5, bas[1], b[2])):
                 rr = r
                 ws.merge_cells(start_row=rr, start_column=c1, end_row=rr, end_column=c1 + 2)
                 ws.cell(rr, c1, baslik).font = bas_font
@@ -801,10 +1081,11 @@ def _excel_ciz(yol, B, ayar, sayfa_adi='Teklif', tasarim=None):
             ws.cell(r + 1, 1, b[3]).font = Font(size=9, color='DDDDDD' if sade else vurgu)
             r += 3
         elif tur == 'ozet':
+            birim = b[3] if len(b) > 3 else 'TL'
             for n, (a, v, k) in enumerate(b[1]):
                 ws.cell(r, 1, a).font = Font(bold=k)
                 hc = ws.cell(r, 4, round(v, 2))
-                hc.number_format = '#,##0.00 "TL"'
+                hc.number_format = '#,##0.00 "%s"' % birim
                 hc.font = Font(bold=k)
                 if b[2] and n == len(b[1]) - 1:
                     for c in range(1, 5):
@@ -823,11 +1104,11 @@ def _excel_ciz(yol, B, ayar, sayfa_adi='Teklif', tasarim=None):
         elif tur in ('imza', 'onay'):
             veren = b[1] if tur == 'imza' else [ayar.get('firma_adi', '')]
             renk_ = '000000' if sade else ana
-            ws.cell(r, 1, 'TEKLİFİ VEREN').font = Font(bold=True, color=renk_)
-            ws.cell(r, 5, 'MÜŞTERİ ONAYI').font = Font(bold=True, color=renk_)
-            sol = [x for x in veren if x] + ['', 'İmza: ______________________']
-            sag_ = ['Firma Kaşe / İmza: ______________________', '', 'Yetkili Ad Soyad: ______________________', '',
-                    'Tarih: ______________________']
+            ws.cell(r, 1, tt('TEKLİFİ VEREN')).font = Font(bold=True, color=renk_)
+            ws.cell(r, 5, tt('MÜŞTERİ ONAYI')).font = Font(bold=True, color=renk_)
+            sol = [x for x in veren if x] + ['', tt('İmza') + ': ______________________']
+            sag_ = [tt('Firma Kaşe / İmza') + ': ______________________', '',
+                    tt('Yetkili Ad Soyad') + ': ______________________', '', tt('Tarih') + ': ______________________']
             for i in range(max(len(sol), len(sag_))):
                 if i < len(sol):
                     ws.cell(r + 1 + i, 1, sol[i]).font = Font(bold=i == 0)
@@ -843,7 +1124,7 @@ def _excel_ciz(yol, B, ayar, sayfa_adi='Teklif', tasarim=None):
         ws.oddFooter.left.text = '  ·  '.join(x for x in (ayar.get('firma_adi'), ayar.get('firma_telefon'),
                                                           ayar.get('firma_web')) if x).replace('&', '&&')
         ws.oddFooter.left.size = 8
-        ws.oddFooter.right.text = 'Sayfa &P / &N'
+        ws.oddFooter.right.text = '%s &P / &N' % tt('Sayfa')
         ws.oddFooter.right.size = 8
     wb.save(yol)
     return yol
@@ -852,13 +1133,18 @@ def _excel_ciz(yol, B, ayar, sayfa_adi='Teklif', tasarim=None):
 # ======================================================================
 # Dis arayuz
 # ======================================================================
+def _dil(girdi):
+    return _Dil(girdi).dil
+
+
 def pdf_olustur(yol, girdi, sonuc, ayar, tasarim=None):
-    return _pdf_ciz(yol, bolumler(girdi, sonuc, ayar, tasarim), ayar, 'Teklif ' + str(girdi.get('teklif_no') or ''),
-                    tasarim)
+    no = '%s %s' % ('Proposal' if _dil(girdi) == 'EN' else 'Teklif', girdi.get('teklif_no') or '')
+    return _pdf_ciz(yol, bolumler(girdi, sonuc, ayar, tasarim), ayar, no, tasarim, _dil(girdi))
 
 
 def excel_olustur(yol, girdi, sonuc, ayar, tasarim=None):
-    return _excel_ciz(yol, bolumler(girdi, sonuc, ayar, tasarim), ayar, tasarim=tasarim)
+    return _excel_ciz(yol, bolumler(girdi, sonuc, ayar, tasarim), ayar, 'Proposal' if _dil(girdi) == 'EN'
+                      else 'Teklif', tasarim, _dil(girdi))
 
 
 def karsilastirma_pdf(yol, teklifler, ayar, tasarim=None):

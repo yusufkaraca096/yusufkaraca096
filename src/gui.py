@@ -134,6 +134,9 @@ class DiaGUI:
                   bg='#16a085', fg='white', font=('Arial', 11, 'bold'),
                   padx=15, pady=10).pack(side=tk.LEFT, padx=3)
 
+        tk.Button(btn_frame, text='📖 Rehber', command=self.rehber_ac,
+                  bg='#d35400', fg='white', font=('Arial', 10, 'bold'),
+                  padx=10, pady=8).pack(side=tk.LEFT, padx=5)
         tk.Button(btn_frame, text='ℹ Hakkında', command=self.hakkinda_ac,
                   bg='#34495e', fg='white', font=('Arial', 11, 'bold'),
                   padx=15, pady=10).pack(side=tk.LEFT, padx=3)
@@ -333,6 +336,10 @@ class DiaGUI:
 
     def ayarlar_ac(self):
         AyarlarPenceresi(self.root, self.musteri_klasoru, self.program_klasoru)
+
+    def rehber_ac(self):
+        from rehber_gui import RehberPenceresi
+        RehberPenceresi(self.root)
 
     def logo_ac(self):
         from entegrasyon_gui import LogoPenceresi
@@ -691,6 +698,10 @@ class AyarlarPenceresi:
                   bg='#3498db', fg='white',
                   font=('Arial', 10, 'bold')).pack(side=tk.LEFT, padx=10)
 
+        tk.Button(ust, text='📖 Kullanım Rehberi', command=self.rehber_ac,
+                  bg='#d35400', fg='white',
+                  font=('Arial', 10, 'bold')).pack(side=tk.RIGHT, padx=10)
+
         # Notebook (sekmeler)
         self.notebook = ttk.Notebook(self.pencere)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -850,15 +861,24 @@ class AyarlarPenceresi:
 
         tk.Button(btn, text='+ Yeni', command=lambda: self.ekle(self.ay_tree),
                   bg='#3498db', fg='white', padx=10).pack(side=tk.LEFT, padx=2)
-        tk.Button(btn, text=' Sil', command=lambda: self.sil(self.ay_tree),
+        tk.Button(btn, text='🗑 Sil', command=lambda: self.sil(self.ay_tree),
                   bg='#e74c3c', fg='white', padx=10).pack(side=tk.LEFT, padx=2)
-        tk.Button(btn, text=' Duzenle',
+        tk.Button(btn, text='✎ Düzenle',
                   command=lambda: self.duzenle(self.ay_tree, ['ayar', 'deger', 'aciklama', 'formul', 'ornek']),
                   bg='#f39c12', fg='white', padx=10).pack(side=tk.LEFT, padx=2)
         tk.Button(btn, text='ℹ Detay', command=self.ayar_detay_goster,
                   bg='#9b59b6', fg='white', padx=10).pack(side=tk.LEFT, padx=2)
         tk.Button(btn, text='＋ Eksik Ayarlari Ekle', command=self.eksik_ayarlari_ekle,
                   bg='#16a085', fg='white', padx=10).pack(side=tk.LEFT, padx=2)
+
+    def rehber_ac(self, ara=None):
+        from rehber_gui import RehberPenceresi
+        if ara is None:
+            # Ayarlar sekmesinde bir satir seciliyse rehber o ayarla acilir
+            sec = self.ay_tree.selection()
+            if sec and self.notebook.index('current') == 3:
+                ara = str(self.ay_tree.item(sec[0], 'values')[0])
+        RehberPenceresi(self.pencere, ara=ara, geri_grab=self.pencere)
 
     def eksik_ayarlari_ekle(self):
         """Yeni parametrik ayarlardan bu modulde olmayanlari varsayilan degerle ekler."""
@@ -906,6 +926,14 @@ class AyarlarPenceresi:
         aciklama = str(v[2]) if len(v) > 2 else ''
         formul = str(v[3]) if len(v) > 3 else ''
         ornek = str(v[4]) if len(v) > 4 else ''
+        # Programdaki guncel tanim, musterinin eski kurallar.xlsx'indeki metinden onceliklidir
+        from _ortak import AYAR_TANIMLARI
+        for a in AYAR_TANIMLARI:
+            if a['ayar'] == ayar_adi:
+                aciklama, formul, ornek = a['aciklama'], a['formul'], a['ornek']
+                if a.get('secenekler'):
+                    formul = 'Seçenekler: ' + ' / '.join(a['secenekler']) + '  |  ' + formul
+                break
 
         if not (formul and ornek and aciklama):
             try:
@@ -960,13 +988,24 @@ class AyarlarPenceresi:
                      anchor='w', justify='left', wraplength=640,
                      padx=10, pady=8).pack(fill=tk.X)
 
-        blok('[1] ACIKLAMA (Ne ise yarar?)', aciklama, '#2c3e50')
-        blok('[2] FORMUL / KURAL', formul, '#8e44ad')
-        blok('[3] ORNEK', ornek, '#16a085')
+        blok('[1] AÇIKLAMA (Ne işe yarar?)', aciklama, '#2c3e50')
+        blok('[2] FORMÜL / KURAL', formul, '#8e44ad')
+        blok('[3] ÖRNEK', ornek, '#16a085')
 
-        tk.Button(p, text='Kapat', command=p.destroy,
+        alt_btn = tk.Frame(p, bg='white')
+        alt_btn.pack(pady=10)
+
+        def rehberde_ac():
+            p.grab_release()
+            p.destroy()
+            self.rehber_ac(ayar_adi)
+
+        tk.Button(alt_btn, text='📖 Rehberde Aç (örnekler)', command=rehberde_ac,
+                  bg='#d35400', fg='white', font=('Arial', 11, 'bold'),
+                  padx=15, pady=6).pack(side=tk.LEFT, padx=5)
+        tk.Button(alt_btn, text='Kapat', command=p.destroy,
                   bg='#95a5a6', fg='white', font=('Arial', 11, 'bold'),
-                  padx=25, pady=6).pack(pady=10)
+                  padx=25, pady=6).pack(side=tk.LEFT, padx=5)
 
     def veri_yukle(self):
         modul = self.modul_var.get()

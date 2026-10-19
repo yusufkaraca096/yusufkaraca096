@@ -131,6 +131,7 @@ class UcTanUcaTest(unittest.TestCase):
                 'Il': ['Kadıköy/İstanbul', 'Siverek', 'Kadıköy'],
                 'Ilce': [None, None, 'İstanbul'],
                 'Telefon': ['0532 123 45 67', 5321234568, None],
+                'Ulke': ['', None, 'TURKIYE'],
             }).to_excel(os.path.join(d, 'cari_listesi.xlsx'), index=False)
             dia_isle.KLASOR = d
             dia_isle.modul_isle('cari', dia_isle.kurallari_yukle(), mukerrer_mod='otomatik')
@@ -140,6 +141,7 @@ class UcTanUcaTest(unittest.TestCase):
         self.assertEqual(df['verginumarasi'][0], '0123456789')
         self.assertEqual(df['sehir'].tolist(), ['İSTANBUL', 'ŞANLIURFA', 'İSTANBUL'])
         self.assertEqual(df['ilce'].tolist(), ['KADIKÖY', 'SİVEREK', 'KADIKÖY'])
+        self.assertEqual(df['ulke'].tolist(), ['TURKIYE'] * 3)      # varsayilan bos hucreye yazildi
         # cep numarasi telefon1'den ceptel'e tasinir (cep_ayir)
         self.assertEqual(df['ceptel'][0], '5321234567')
         self.assertTrue(pd.isna(df['telefon1'][0]))

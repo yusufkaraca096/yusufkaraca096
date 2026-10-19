@@ -3,6 +3,9 @@
 Müşteri Excel dosyalarını (cari, stok, banka, personel, demirbaş, hesap planı,
 muhasebe kodu, ürün ağacı) DIA'ya aktarılabilir hale getiren Tkinter uygulaması.
 
+**Kullanım rehberi:** programda **📖 Rehber** butonu (Ayarlar penceresinde de var; seçili ayarın
+açıklama ve örneklerine gider) veya [docs/KULLANIM_REHBERI.md](docs/KULLANIM_REHBERI.md).
+
 ## Dosyalar
 
 | Dosya | Görev |
@@ -12,6 +15,7 @@ muhasebe kodu, ürün ağacı) DIA'ya aktarılabilir hale getiren Tkinter uygula
 | `src/_ortak.py` | Temizlik fonksiyonları ve **parametrik ayar tanımları** (`AYAR_TANIMLARI`) |
 | `src/ek_kontroller.py` | Ek kontroller (ünvan, vergi dairesi, barkod, birim, IBAN→banka, TDHP, benzer kayıt, değişiklik raporu ...) |
 | `src/ek_ayarlar.py` | Ek kontrollerin parametrik ayar tanımları (modül bazında) |
+| `src/rehber.py`, `src/rehber_gui.py` | Kullanım rehberi içeriği ve penceresi (`python src/rehber.py` → docs/KULLANIM_REHBERI.md) |
 | `src/il_ilce.py` | İl / ilçe ayrıştırma ve düzeltme |
 | `src/il_ilce_veri.py` | 81 il, 973 ilçe listesi |
 | `src/kurallar.py` | `kurallar.xlsx` yoksa kullanılan varsayılan kurallar |

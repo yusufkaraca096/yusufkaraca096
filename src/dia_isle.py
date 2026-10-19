@@ -290,7 +290,9 @@ def veri_temizle(df, modul, modul_adi, kurallar):
         if alan not in df.columns:
             df[alan] = deger
         else:
-            df[alan] = df[alan].fillna(deger)
+            # bosluk_temizle bos hucreleri '' yapar; fillna tek basina onlari doldurmaz
+            bos = df[alan].isna() | (df[alan].astype(str).str.strip() == '')
+            df[alan] = df[alan].astype(object).where(~bos, deger)
 
     # Urun agaci grup seviye kontrolu
     if modul_adi == 'urunagaci':

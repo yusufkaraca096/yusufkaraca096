@@ -657,5 +657,74 @@ class TasarimTest(unittest.TestCase):
         self.assertTrue(t['goster']['imza'])
 
 
+class KesifVeAsistanTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = self.tmp.name
+        motor_excel(os.path.join(self.d, 'motor.xlsx'))
+        self.v = TeklifVeri(os.path.join(self.d, 'teklif.db'))
+        self.v.excelden_ice_aktar(os.path.join(self.d, 'motor.xlsx'))
+        self.k = self.v.kurallar(gecmis=False)
+        self.ayar = dict(self.v.ayarlar(), max_toplam_indirim=20)
+
+    def tearDown(self):
+        self.v.db.close()
+        self.tmp.cleanup()
+
+    def h(self, **g):
+        return hesapla(dict({'musteri': 'A', 'masaustu': 2, 'mobil': 0, 'kalemler': [{'kod': 'MAS1'}]}, **g),
+                       self.v.paketler(), self.ayar, kurallar=self.k)
+
+    def test_standart_cevaplar_ve_gruplar(self):
+        from teklif_hesap import standart_cevaplar
+        c = standart_cevaplar(self.k['sorular'])
+        self.assertEqual((c['sube_sayisi'], c['uretim'], c['e_donusum']), (1, False, True))
+        self.assertNotIn('cari_sayisi', c)
+        self.assertTrue(all(s.get('grup') for s in self.k['sorular']))
+
+    def test_soru_duzenleme_ve_varsayilan(self):
+        sorular = self.v.tablo_oku('kesif')
+        for s in sorular:
+            if s['kod'] == 'sube_sayisi':
+                s.update(soru='Mağaza sayısı', varsayilan='3')
+        self.v.tablo_yaz('kesif', sorular)
+        from teklif_hesap import standart_cevaplar
+        k = self.v.kurallar(gecmis=False)
+        self.assertEqual([s['soru'] for s in k['sorular'] if s['kod'] == 'sube_sayisi'], ['Mağaza sayısı'])
+        self.assertEqual(standart_cevaplar(k['sorular'])['sube_sayisi'], 3)
+
+    def test_profiller(self):
+        self.assertIn('Üretim firması', self.k['profiller'])
+        self.v.kesif_profil_kaydet('Benim', {'sube_sayisi': 4, 'uretim': True, 'bos': ''})
+        self.assertEqual(self.v.kesif_profilleri()['Benim'], {'sube_sayisi': 4, 'uretim': True})
+        self.v.kesif_profil_sil('Benim')
+        self.assertNotIn('Benim', self.v.kesif_profilleri())
+
+    def test_etki_metni(self):
+        from teklif_hesap import soru_etki_metni
+        s = {s['kod']: s for s in self.k['sorular']}
+        self.assertEqual(soru_etki_metni(s['uretim'], {'kurulum': 'Kurulum'}), 'Evet ise Kurulum: +24 saat')
+        self.assertIn('× 1.15', soru_etki_metni(s['it_personeli_yok']))
+        self.assertTrue(soru_etki_metni(s['yeni_musteri']).startswith('Sadece bilgi'))
+
+    def test_asistan_ihtiyac_pazarlik_hazirlik(self):
+        s = self.h(cevaplar={'uretim': True, 'e_donusum': True})
+        a = s['asistan']
+        basliklar = [o['baslik'] for o in a['oneriler']]
+        self.assertIn('Üretim paketi yok', basliklar)
+        self.assertIn('e-Dönüşüm paketi yok', basliklar)
+        s2 = self.h(cevaplar={'uretim': True}, kalemler=[{'kod': 'MAS1'}, {'kod': 'URE'}])
+        self.assertNotIn('Üretim paketi yok', [o['baslik'] for o in s2['asistan']['oneriler']])
+        p = a['pazarlik']
+        self.assertAlmostEqual(p['taban'], p['liste'] * 0.8, places=1)
+        self.assertTrue(p['taban'] <= p['hedef'] <= p['teklif'])
+        self.assertEqual(len(a['takip']), 3)
+        self.assertIn(('Karar verici (yetkili)', False), a['hazirlik'])
+        from teklif_hesap import satis_brifingi
+        metin = satis_brifingi({'musteri': 'A'}, s)
+        self.assertIn('SATIŞ BRİFİNGİ', metin)
+        self.assertIn('Taviz sırası', metin)
+
+
 if __name__ == '__main__':
     unittest.main()

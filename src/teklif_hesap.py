@@ -209,7 +209,7 @@ def satir_hesapla(paket, tip, adet, ind_yuzde, kdv, saat=None, ind_tutar=0, kamp
     tablo_saat = float(paket.get('ent_saat' if tip == 'ENTERPRISE' else 'std_saat') or 0)
     saat = tablo_saat if saat in (None, '') else float(saat)
     return {'kod': paket['kod'], 'ad': paket.get('ad', ''), 'tur': paket.get('tur', ''), 'adet': adet,
-            'aciklama': paket.get('aciklama') or '',
+            'aciklama': paket.get('aciklama') or '', 'urunler': paket.get('urunler') or '',
             'birim': _r(birim), 'kull_yuzde': kull, 'toplam': _r(toplam), 'ind_yuzde': float(ind_yuzde or 0),
             'ind_tutar': float(ind_tutar or 0), 'kamp_ad': (kamp or {}).get('ad', '') if kamp_ind else '',
             'kamp_indirim': _r(kamp_ind), 'elle_indirim': _r(elle_ind),
@@ -305,6 +305,64 @@ def soru_etkisi(soru, cevap):
         return True, _f(soru.get('deger'), 1), '%s: %g' % (soru_adi, v)
     fazla = max(0.0, v - _f(soru.get('esik')))
     return fazla > 0, fazla * _f(soru.get('deger')), '%s: %g' % (soru_adi, v)
+
+
+def cevap_coz(soru, metin):
+    """Metin cevabi (standart cevap, profil) soru turune cevirir: EVET_HAYIR -> bool, SAYI -> float, SECIM -> metin."""
+    if metin is None or (isinstance(metin, str) and not metin.strip()):
+        return None
+    tur = soru.get('tur')
+    if tur == 'EVET_HAYIR':
+        return metin if isinstance(metin, bool) else _evet(metin)
+    if tur == 'SECIM':
+        secenekler = [x.strip() for x in str(soru.get('secenekler') or '').split(';') if x.strip()]
+        return next((x for x in secenekler if katla(x) == katla(metin)), str(metin).strip())
+    return sayi_coz(metin, None)
+
+
+def standart_cevaplar(sorular):
+    """Sorularin 'varsayilan' (standart) cevaplari: yeni teklif bu cevaplarla acilir."""
+    return {s['kod']: c for s in sorular for c in [cevap_coz(s, s.get('varsayilan'))] if c is not None}
+
+
+_ISLEM_ADI = {'EKLE': 'saat ekler', 'CARP': 'saati çarpar', 'CARP_YUZDE': 'saati % artırır',
+              'MIKTAR': 'miktar (kayıt / adet) verir', 'BILGI': 'sadece bilgi'}
+
+
+def soru_etki_metni(soru, hizmet_adlari=None):
+    """Sorunun ne yaptigini duz cumleyle anlatir (duzenleyici ve form icin)."""
+    hedef = soru.get('hedef') or ''
+    hedef_adi = 'tüm hizmetler' if hedef == '*' else (hizmet_adlari or {}).get(hedef, hedef) or '?'
+    islem, deger, tur = soru.get('islem'), str(soru.get('deger') or ''), soru.get('tur')
+    tetik = 'Evet' if katla(soru.get('tetik') or 'EVET') == 'evet' else 'Hayır'
+    if islem == 'BILGI' or not islem:
+        return 'Sadece bilgi: hesaba girmez (satış asistanı ve kampanya koşulları kullanır).'
+    if tur == 'EVET_HAYIR':
+        if islem == 'EKLE':
+            return '%s ise %s: +%s saat' % (tetik, hedef_adi, deger)
+        if islem.startswith('CARP'):
+            return '%s ise %s × %s' % (tetik, hedef_adi, deger)
+    if tur == 'SECIM' and islem == 'EKLE':
+        return '%s: seçime göre +saat (%s)' % (hedef_adi, deger)
+    if islem == 'MIKTAR':
+        return '%s: girilen sayı kayıt / adet olarak kullanılır' % hedef_adi
+    if islem == 'CARP_YUZDE':
+        return '%s: girilen %% kadar artar' % hedef_adi
+    if islem == 'CARP':
+        return '%s × %s (değer girilirse)' % (hedef_adi, deger)
+    esik = _f(soru.get('esik'))
+    return '%s: %s üzerindeki her 1 için +%s saat' % (hedef_adi, '%g' % esik, deger)
+
+
+def kesif_ozeti(sorular, cevaplar):
+    """Formun dolulugu: {cevaplanan, toplam, yuzde, bos: [soru metni]} (bilgi sorulari dahil)."""
+    cevaplar = cevaplar or {}
+    bos = [s.get('soru') or s['kod'] for s in sorular
+           if cevaplar.get(s['kod']) in (None, '') and s.get('tur') != 'EVET_HAYIR']
+    toplam = len([s for s in sorular if s.get('tur') != 'EVET_HAYIR'])
+    cevaplanan = toplam - len(bos)
+    return {'cevaplanan': cevaplanan, 'toplam': toplam,
+            'yuzde': round(cevaplanan * 100.0 / toplam) if toplam else 100, 'bos': bos}
 
 
 def hizmet_hesapla(satirlar, kullanici, cevaplar, hizmetler, sorular, elle=None):
@@ -778,6 +836,34 @@ def satis_asistani(girdi, s, ayar, kurallar):
              'yıllık düzenli gelir sağlar ve müşteriye güven verir.' % (p['ad'], p['saat'], para(p['yillik']),
                                                                           para(p['aylik'])))
 
+    # Ihtiyac - paket uyumu (kesif cevaplari ile secilen paketler)
+    cevaplar = girdi.get('cevaplar') or {}
+    ihtiyac = _ihtiyac_paket_uyumu(s['satirlar'], cevaplar, baglam)
+    for baslik, mesaj in ihtiyac:
+        oner('UYARI', baslik, mesaj)
+    if ihtiyac:
+        skor -= 5
+        gerekce.append('İhtiyaç-paket uyumsuzluğu → -5')
+
+    # Kesif dolulugu ve musteri bilgisi
+    ko = kesif_ozeti(kurallar.get('sorular') or [], cevaplar)
+    if kurallar.get('sorular'):
+        if ko['yuzde'] < 60:
+            skor -= 8
+            gerekce.append('Keşif formu %%%d dolu → -8 (tahmin belirsiz)' % ko['yuzde'])
+            oner('UYARI', 'Keşif eksik', 'Form %%%d dolu. Müşteriye sorun: %s.' % (
+                ko['yuzde'], ', '.join(ko['bos'][:4])))
+        elif ko['yuzde'] >= 90:
+            skor += 3
+            gerekce.append('Keşif formu eksiksiz → +3')
+    mb = girdi.get('musteri_bilgi') or {}
+    if not (mb.get('yetkili') and (mb.get('telefon') or mb.get('eposta'))):
+        skor -= 3
+        gerekce.append('Karar verici / iletişim bilgisi yok → -3')
+    if (girdi.get('bakim') or ''):
+        skor += 3
+        gerekce.append('Bakım anlaşması teklifte → +3')
+
     if s['kontrol']['kritik']:
         skor -= 10
         gerekce.append('Kritik kontrol hatası → -10')
@@ -785,7 +871,138 @@ def satis_asistani(girdi, s, ayar, kurallar):
     seviye = 'Yüksek' if skor >= 65 else 'Orta' if skor >= 40 else 'Düşük'
     sira = {'KRİTİK': 0, 'UYARI': 1, 'ÖNERİ': 2, 'İYİ': 3, 'BİLGİ': 4}
     oneriler.sort(key=lambda x: sira.get(x['seviye'], 5))
-    return {'skor': skor, 'seviye': seviye, 'gerekce': gerekce, 'oneriler': oneriler}
+    pazarlik = _pazarlik_araligi(s, ayar)
+    return {'skor': skor, 'seviye': seviye, 'gerekce': gerekce, 'oneriler': oneriler,
+            'pazarlik': pazarlik, 'taviz': _taviz_sirasi(s, ayar, pazarlik),
+            'itirazlar': _itiraz_cevaplari(s, ayar), 'takip': _takip_plani(girdi, ayar),
+            'hazirlik': _hazirlik_listesi(girdi, s, ko, kurallar), 'kesif': ko}
+
+
+# Kesif cevabi 'evet' ise teklifte bu urun / kod parcalarindan biri olmali
+IHTIYAC_PAKET = [
+    ('e_donusum', ('efatura', 'earsiv', 'edefter', 'e_fatura', 'gib'), 'e-Dönüşüm paketi yok',
+     'Keşifte e-Fatura / e-Arşiv / e-Defter kurulacak denmiş ama teklifte e-dönüşüm paketi yok.'),
+    ('uretim', ('ure', 'uretim', 'mrp'), 'Üretim paketi yok',
+     'Keşifte üretim yapıyor denmiş ama teklifte üretim modülü yok.'),
+]
+
+
+def _ihtiyac_paket_uyumu(satirlar, cevaplar, baglam):
+    sonuc = []
+    parcalar = set()
+    for x in satirlar:
+        parcalar.update(p for p in re.split(r'[-_\s,]+', katla(x['kod'] + ' ' + (x.get('urunler') or ''))) if p)
+    metin = ' '.join(katla(x['kod'] + ' ' + (x.get('urunler') or '')) for x in satirlar)
+    for kod, aranan, baslik, mesaj in IHTIYAC_PAKET:
+        if _evet(cevaplar.get(kod)) and satirlar and not any(a in parcalar or (len(a) >= 5 and a in metin) for a in aranan):
+            sonuc.append((baslik, mesaj + ' Paketi ekleyin ya da müşteriye ayrıca teklif edileceğini yazın.'))
+    if baglam.get('mobil') and satirlar and not any(katla(x.get('tur') or '').startswith('mob') for x in satirlar):
+        sonuc.append(('Mobil paket yok', '%d mobil kullanıcı girilmiş ama teklifte mobil paket yok.' % baglam['mobil']))
+    return sonuc
+
+
+def _pazarlik_araligi(s, ayar):
+    """Liste (indirimsiz) -> teklif -> hedef -> taban (inilebilecek en dusuk net). Tutarlar KDV haric."""
+    liste = s['lisans']['toplam'] - s['lisans'].get('kamp_indirim', 0) + s['uyarlama']['ham_liste'] + \
+        s['sabit']['net'] + s['seyahat']['tutar']
+    teklif = s['net_toplam']
+    adaylar, neden = [], []
+    max_ind = _f(ayar.get('max_toplam_indirim'))
+    if max_ind:
+        adaylar.append(liste * (1 - max_ind / 100))
+        neden.append('en fazla %%%g indirim' % max_ind)
+    if s['kar']['maliyet'] and _f(ayar.get('min_kar_marji')) < 100:
+        adaylar.append(s['kar']['maliyet'] / (1 - _f(ayar.get('min_kar_marji')) / 100))
+        neden.append('kâr marjı en az %%%g' % _f(ayar.get('min_kar_marji')))
+    taban = max(adaylar) if adaylar else None
+    hedef = (teklif + taban) / 2 if taban is not None and taban < teklif else teklif
+    return {'liste': _r(liste), 'teklif': _r(teklif), 'hedef': _r(hedef), 'taban': _r(taban) if taban else None,
+            'pay': _r(teklif - taban) if taban is not None else None, 'taban_nedeni': ', '.join(neden)}
+
+
+def _taviz_sirasi(s, ayar, pazarlik):
+    """Fiyat indirmeden once verilebilecek tavizler, ucuzdan pahaliya."""
+    adimlar = []
+    ucret = s['uyarlama']['saat_ucreti']
+    if ucret:
+        adimlar.append('Ek eğitim saati hediye (ör. 4 saat ≈ %s maliyet, fiyat düşmeden değer artar)' %
+                       para(4 * ucret))
+    b = s.get('bakim') or {}
+    if b.get('onerilen'):
+        adimlar.append('Bakım anlaşmasının ilk 3 ayı ücretsiz veya 1. yıl %10 indirimli')
+    od = [o for o in s['odeme'] if o['tur'] != 'PESIN' and not o['vade_farki'] and o['taksit'] > 1]
+    if od:
+        adimlar.append('Vade farksız taksit (%s) — fiyat aynı kalır' % ', '.join(o['ad'] for o in od[:2]))
+    if pazarlik.get('pay'):
+        adimlar.append('Son adım fiyat: en fazla %s (taban %s; %s)' % (
+            para(pazarlik['pay']), para(pazarlik['taban']), pazarlik['taban_nedeni']))
+    else:
+        adimlar.append('Son adım fiyat: Ayarlar\'da en fazla indirim / maliyet girilirse inilebilecek taban hesaplanır')
+    return adimlar
+
+
+def _itiraz_cevaplari(s, ayar):
+    u = s['uyarlama']
+    r = s['rakip']
+    gun = float(ayar.get('is_gunu_saat') or 8) or 8
+    kalemler = sorted((k for k in s['hizmet']['kalemler'] if k['saat']), key=lambda k: -k['saat'])[:3]
+    dokum = ', '.join('%s %g saat' % (k['ad'], k['saat']) for k in kalemler)
+    sonuc = [('"Fiyat yüksek"', 'Hizmet dökümünü gösterin: %s (toplam %g saat ≈ %g iş günü). Rakip teklifinde '
+                                'kaç saat kurulum, eğitim ve canlıya geçiş desteği olduğunu sorun.' % (
+                                    dokum or '-', u['saat'], round(u['saat'] / gun, 1)))]
+    if r.get('ortalama'):
+        sonuc.append(('"Rakip daha ucuz"', 'Aynı saat için rakip ortalaması %s, bizimki %s. Fark saat ücretinde değil '
+                                           'kapsamda olabilir; rakibin saat ve kapsamını yazılı isteyin.' % (
+                                               para(r['ortalama']), para(r['biz']))))
+    sonuc.append(('"Uyarlamayı sonra yaparız"', 'Eksik kurulum, yanlış açılış bakiyesi ve eğitimsiz kullanıcı ilk '
+                                                'aylarda en büyük maliyettir; canlıya geçiş desteği tek seferliktir.'))
+    sonuc.append(('"Düşünüp döneceğiz"', 'Teklif geçerlilik süresini ve kampanya bitişini hatırlatın; bir sonraki '
+                                         'görüşme tarihini o an netleştirin.'))
+    return sonuc
+
+
+def _takip_plani(girdi, ayar):
+    t = _tarih(girdi.get('tarih'))
+    from datetime import timedelta
+    gecerlilik = int(_f(ayar.get('gecerlilik_gun'), 15))
+    plan = [(t + timedelta(days=2), 'İlk takip: teklif ulaştı mı, sorular?'),
+            (t + timedelta(days=7), 'İkinci takip: karar vericiyle görüşme / demo')]
+    if gecerlilik > 3:
+        plan.append((t + timedelta(days=gecerlilik - 2), 'Son hatırlatma: geçerlilik bitmeden 2 gün önce'))
+    return [(d.strftime('%d.%m.%Y'), m) for d, m in plan]
+
+
+def _hazirlik_listesi(girdi, s, ko, kurallar):
+    mb = girdi.get('musteri_bilgi') or {}
+    od = [o for o in s['odeme'] if o['musteriye_goster']]
+    return [('Müşteri adı', bool(girdi.get('musteri'))),
+            ('Karar verici (yetkili)', bool(mb.get('yetkili'))),
+            ('Telefon veya e-posta', bool(mb.get('telefon') or mb.get('eposta'))),
+            ('Keşif formu %80+ dolu', ko['yuzde'] >= 80 if kurallar.get('sorular') else True),
+            ('Kritik kontrol yok', not s['kontrol']['kritik']),
+            ('Ödeme seçeneği sunuldu', bool(od)),
+            ('Bakım anlaşması önerildi', bool((s.get('bakim') or {}).get('sun'))),
+            ('Rakip verisi var', s['rakip'].get('ortalama') is not None)]
+
+
+def satis_brifingi(girdi, s):
+    """Satis asistaninin duz metin ozeti (panoya kopyalanip CRM / mesaj olarak paylasilir)."""
+    a = s['asistan']
+    p = a['pazarlik']
+    satirlar = ['SATIŞ BRİFİNGİ - %s (%s)' % (girdi.get('musteri') or '-', girdi.get('teklif_no') or 'kaydedilmedi'),
+                'Kazanma ihtimali: %%%d (%s)' % (a['skor'], a['seviye']),
+                'Net teklif: %s + KDV | Genel toplam: %s' % (para(s['net_toplam']), para(s['genel_toplam'])),
+                'Pazarlık: liste %s, teklif %s, hedef %s, taban %s' % (
+                    para(p['liste']), para(p['teklif']), para(p['hedef']), para(p['taban']) if p['taban'] else '-'),
+                '', 'Öneriler:']
+    satirlar += ['- [%s] %s: %s' % (o['seviye'], o['baslik'], o['mesaj']) for o in a['oneriler']]
+    satirlar += ['', 'Taviz sırası:'] + ['%d. %s' % (i, x) for i, x in enumerate(a['taviz'], 1)]
+    satirlar += ['', 'İtirazlar:'] + ['- %s → %s' % x for x in a['itirazlar']]
+    satirlar += ['', 'Takip:'] + ['- %s: %s' % x for x in a['takip']]
+    eksik = [m for m, tamam in a['hazirlik'] if not tamam]
+    if eksik:
+        satirlar += ['', 'Eksikler: ' + ', '.join(eksik)]
+    return '\n'.join(satirlar)
 
 
 # ======================================================================

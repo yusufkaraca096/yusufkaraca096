@@ -1390,7 +1390,22 @@ Sonra keşif cevapları uygulanır: EKLE (saat ekler; SAYI sorularında eşiği 
 - Kampanya uygunluğu: kampanyanın Koşul alanı (kullanici>=10, soru:gecis_programi=Logo|Netsis, soru:yeni_musteri, tarih:12-15..12-31; " ve " ile birleşir; "elle" = otomatik önerilmez).
 - Geçmiş: sonuçlanan tekliflerin kazanma oranı, benzer büyüklükteki (±%40) tekliflerin oranı, kazanılan ve kaybedilenlerdeki ortalama indirim, kayıp nedenlerinde "fiyat" ağırlığı.
 - Ödeme: peşin indirimin müşteriye kazandırdığı tutar; kredi kartında komisyonun size kalan kısmı ve onu karşılayan vade farkı.
-- Tahmini kazanma ihtimali: 50 puandan başlar; rakip konumu (±), uygun kampanya (+5), kritik hata (-10); yeterli geçmiş varsa benzer tekliflerin kazanma oranıyla harmanlanır. Kesin değil, yön göstericidir.
+- Tahmini kazanma ihtimali: 50 puandan başlar; rakip konumu (±), uygun kampanya (+5), kritik hata (-10), ihtiyaç-paket uyumsuzluğu (-5), keşif formu %60'tan az dolu (-8) / eksiksiz (+3), karar verici ve iletişim bilgisi yok (-3), bakım anlaşması teklifte (+3); yeterli geçmiş varsa benzer tekliflerin kazanma oranıyla harmanlanır. Her puanın nedeni skorun altında yazar. Kesin değil, yön göstericidir.
+- İhtiyaç-paket uyumu: keşifte "üretim var" denip üretim modülü yoksa, "e-dönüşüm kurulacak" denip e-Fatura paketi yoksa, mobil kullanıcı girilip mobil paket yoksa uyarır.
+- Pazarlık aralığı (KDV hariç): Liste (indirimsiz) → Teklif → Hedef → Taban. Taban = en fazla indirim (max_toplam_indirim) ve en az kâr marjından (min_kar_marji, maliyet girildiyse) yüksek olanı; hedef teklif ile tabanın ortası.
+- Taviz sırası: fiyattan önce verilebilecek tavizler (ek eğitim saati, bakımın ilk ayları, vade farksız taksit), en son fiyat indirimi ve inilebilecek en fazla tutar.
+- İtiraz karşılama: "Fiyat yüksek", "Rakip daha ucuz", "Uyarlamayı sonra yaparız", "Düşünüp döneceğiz" için teklifin kendi rakamlarıyla hazır cevaplar.
+- Takip planı: teklif tarihinden 2 ve 7 gün sonra takip, geçerlilik bitmeden 2 gün önce son hatırlatma.
+- Hazırlık kontrol listesi (sol alt): müşteri, yetkili, iletişim, keşif %80+, kritik hata, ödeme, bakım, rakip verisi.
+- "Satış brifingini kopyala": tüm bunları düz metin olarak panoya alır; CRM'e, e-postaya veya ekip mesajına yapıştırın (müşteriye gönderilmez).
+
+### Keşif formunu özelleştirme
+
+- Keşif & Uyarlama sekmesinde "Soruları Düzenle": soru metnini değiştirin (yeniden adlandırma), grup, cevap türü (Evet/Hayır, Sayı, Seçim listesi), seçenekler, standart cevap, açıklama, etkilediği hizmet ve ne yaptığı (saat ekle, çarp, % artır, miktar, sadece bilgi). Sağda "Bu soru: ..." satırı etkisini düz cümleyle gösterir. Yeni soru, kopyala, sırala (▲▼), pasif yap, sil.
+- Standart cevap: yeni teklif keşif formu bu cevaplarla açılır (ör. şube 1, e-dönüşüm EVET). "Standart cevaplar" düğmesi formu bu değerlere döndürür.
+- Profil: hazır cevap setleri (Perakende mağaza, Üretim firması, Toptan / dağıtım, Hizmet / ofis). Profili seçip "Uygula": standart cevaplar + profil cevapları yazılır. Mevcut cevapları "Profil kaydet" ile yeni profil yapabilirsiniz (cari / stok sayıları gibi müşteriye özel sayılar profile alınmaz).
+- Form soruları grup başlıklarıyla gösterilir; soru üzerine gelince açıklama ve etkisi görünür; cevabın yanında o cevabın etkisi (+8 saat, × 1,15, 1.200 adet) yazar; üstte form doluluğu ve boş kalan sorular gösterilir.
+- Kod alanı değişmez: kampanya koşulları (soru:kod) bu kodla çalışır.
 
 ### Taksit, vade farkı ve kredi kartı komisyonu
 

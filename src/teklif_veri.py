@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS bakim_paketi (
 CREATE TABLE IF NOT EXISTS paket_kampanya (
     ad TEXT PRIMARY KEY, kodlar TEXT, yuzde REAL DEFAULT 0, tutar REAL DEFAULT 0, baslangic TEXT, bitis TEXT,
     aktif INTEGER DEFAULT 1, kaynak TEXT DEFAULT 'ELLE');
+CREATE TABLE IF NOT EXISTS kesif_profil (ad TEXT PRIMARY KEY, cevaplar TEXT);
 CREATE TABLE IF NOT EXISTS tasarim (ad TEXT PRIMARY KEY, veri TEXT, varsayilan INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS gerceklesen (no TEXT, kalem TEXT, tahmin REAL, gercek REAL, PRIMARY KEY (no, kalem));
 CREATE TABLE IF NOT EXISTS teklif (
@@ -156,6 +157,34 @@ KESIF_SORULARI = [
     ('it_personeli_yok', 'Firmada bilgi işlem sorumlusu YOK mu?', 'EVET_HAYIR', '', '*', 'CARP', '1.15', 0, 'EVET', 14),
     ('acil_proje', 'Canlıya geçiş 1 aydan kısa sürede mi isteniyor?', 'EVET_HAYIR', '', '*', 'CARP', '1.1', 0, 'EVET', 15),
 ]
+# Soru grubu, standart (varsayilan) cevap ve yardim metni: yeni teklifte form standart cevaplarla acilir.
+KESIF_EK = {
+    'gecis_programi': ('Genel', '', 'Eski programdan veri aktarımının zorluğunu belirler.'),
+    'yeni_musteri': ('Genel', 'EVET', 'Kampanya uygunluğu ve satış asistanı için.'),
+    'sube_sayisi': ('Organizasyon', '1', 'Merkez dahil. 1\'in üzerindeki her şube kuruluma saat ekler.'),
+    'depo_sayisi': ('Organizasyon', '1', '1\'in üzerindeki her depo kuruluma saat ekler.'),
+    'uretim': ('Organizasyon', 'HAYIR', 'Üretim (ürün ağacı, iş emri, maliyet) kurulumu ayrıca zaman alır.'),
+    'e_donusum': ('Organizasyon', 'EVET', 'e-Fatura / e-Arşiv / e-Defter entegrasyon kurulumu.'),
+    'cari_sayisi': ('Veri aktarımı', '', 'Veri temizleme klasöründen otomatik doldurulabilir.'),
+    'stok_sayisi': ('Veri aktarımı', '', 'Veri temizleme klasöründen otomatik doldurulabilir.'),
+    'diger_kayit': ('Veri aktarımı', '', 'Banka, personel, demirbaş, hesap planı kayıtları.'),
+    'veri_hata_orani': ('Veri aktarımı', '', 'Veri temizleme raporundaki hata / mükerrer oranı.'),
+    'rapor_sayisi': ('Geliştirme', '0', 'Müşteriye özel rapor, fatura / irsaliye formu tasarımı.'),
+    'entegrasyon_sayisi': ('Geliştirme', '0', 'E-ticaret, POS, banka, kargo vb. entegrasyonlar.'),
+    'ek_egitim_gun': ('Eğitim ve proje', '0', 'Standart kullanıcı eğitimine ek gün.'),
+    'it_personeli_yok': ('Eğitim ve proje', 'HAYIR', 'Bilgi işlem desteği yoksa tüm işler daha uzun sürer.'),
+    'acil_proje': ('Eğitim ve proje', 'HAYIR', 'Sıkışık takvim tüm hizmetleri hızlandırma maliyeti getirir.'),
+}
+# Hazir kesif profilleri (standart cevap setleri); Kesif sekmesinden uygulanir / yenisi kaydedilir.
+KESIF_PROFILLERI = {
+    'Perakende mağaza': {'sube_sayisi': 3, 'depo_sayisi': 1, 'uretim': False, 'e_donusum': True,
+                         'entegrasyon_sayisi': 1, 'rapor_sayisi': 2},
+    'Üretim firması': {'sube_sayisi': 1, 'depo_sayisi': 3, 'uretim': True, 'e_donusum': True, 'rapor_sayisi': 4,
+                       'ek_egitim_gun': 1},
+    'Toptan / dağıtım': {'sube_sayisi': 2, 'depo_sayisi': 2, 'uretim': False, 'e_donusum': True,
+                         'entegrasyon_sayisi': 1, 'rapor_sayisi': 3},
+    'Hizmet / ofis': {'sube_sayisi': 1, 'depo_sayisi': 1, 'uretim': False, 'e_donusum': True, 'rapor_sayisi': 1},
+}
 # tur: PESIN, TAKSIT (havale / cek-senet), KREDI_KARTI. Oranlar 0: kendi bankanizin oranlarini girin.
 ODEME_SECENEKLERI = [
     ('Peşin (havale / EFT)', 'PESIN', 1, 5, 0, 0, 0, 1, 1),
@@ -203,6 +232,8 @@ class TeklifVeri:
         self.db.executescript(SEMA)
         self._kolon_ekle('paket', 'zorunlu', 'TEXT')
         self._kolon_ekle('kampanya', 'kosul', 'TEXT')
+        for kolon in ('varsayilan', 'grup', 'aciklama'):
+            self._kolon_ekle('kesif', kolon, 'TEXT')
         self._varsayilanlari_doldur()
         for ad, deger, _ in AYARLAR:
             self.db.execute('INSERT OR IGNORE INTO ayar VALUES (?, ?)', (ad, str(deger)))
@@ -227,6 +258,12 @@ class TeklifVeri:
         if bos('kesif'):
             self.db.executemany('INSERT INTO kesif (kod, soru, tur, secenekler, hedef, islem, deger, esik, tetik, sira, '
                                 'aktif) VALUES (?,?,?,?,?,?,?,?,?,?,1)', KESIF_SORULARI)
+        for kod, (grup, vars_, aciklama) in KESIF_EK.items():      # eski veritabanlarinda bos kalan alanlar
+            self.db.execute('UPDATE kesif SET grup=?, varsayilan=COALESCE(varsayilan, ?), aciklama=COALESCE('
+                            'aciklama, ?) WHERE kod=? AND grup IS NULL', (grup, vars_, aciklama, kod))
+        if bos('kesif_profil'):
+            self.db.executemany('INSERT INTO kesif_profil VALUES (?, ?)', [
+                (ad, json.dumps(c, ensure_ascii=False)) for ad, c in KESIF_PROFILLERI.items()])
         if bos('odeme_secenegi'):
             secenekler = list(ODEME_SECENEKLERI)
             eski = self.db.execute("SELECT deger FROM ayar WHERE ad='pesin_indirim'").fetchone()
@@ -324,12 +361,38 @@ class TeklifVeri:
             'odeme': [dict(r) for r in self.db.execute('SELECT * FROM odeme_secenegi ORDER BY sira, ad')],
             'bakim': [dict(r) for r in self.db.execute('SELECT * FROM bakim_paketi ORDER BY sira, ad')],
             'kampanyalar': self.kampanyalar(),
+            'profiller': self.kesif_profilleri(),
             'paket_kampanyalari': [dict(r) for r in self.db.execute(
                 'SELECT * FROM paket_kampanya WHERE aktif=1 ORDER BY ad')],
         }
         if gecmis:
             k['gecmis'] = self.gecmis_ozeti()
         return k
+
+    # ------------------------------------------------------------ kesif profilleri
+    def kesif_profilleri(self):
+        sonuc = {}
+        for r in self.db.execute('SELECT ad, cevaplar FROM kesif_profil ORDER BY ad'):
+            try:
+                sonuc[r['ad']] = json.loads(r['cevaplar'] or '{}')
+            except ValueError:
+                sonuc[r['ad']] = {}
+        return sonuc
+
+    def kesif_profil_kaydet(self, ad, cevaplar):
+        ad = (ad or '').strip()
+        if not ad:
+            raise ValueError('Profil adı boş olamaz')
+        self.degisti = True
+        temiz = {k: v for k, v in (cevaplar or {}).items() if v not in (None, '')}
+        with self.db:
+            self.db.execute('INSERT OR REPLACE INTO kesif_profil VALUES (?, ?)',
+                            (ad, json.dumps(temiz, ensure_ascii=False)))
+
+    def kesif_profil_sil(self, ad):
+        self.degisti = True
+        with self.db:
+            self.db.execute('DELETE FROM kesif_profil WHERE ad=?', (ad,))
 
     # ------------------------------------------------------------ PDF / Excel tasarimlari
     def tasarimlar(self):

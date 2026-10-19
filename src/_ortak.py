@@ -1,7 +1,15 @@
 import re
 import os
+import sys
 import pandas as pd
 from datetime import datetime
+
+# Windows konsolu (cp1252) Turkce harfte (İ, Ş, Ğ) print'i patlatmasin: yazilamayan karakter '?' olur
+for _akis in (sys.stdout, sys.stderr):
+    try:
+        _akis.reconfigure(errors='replace')
+    except (AttributeError, ValueError):
+        pass
 
 TR_KARAKTER = str.maketrans('şçığüöŞÇİĞÜÖ', 'sciguoSCIGUO')
 

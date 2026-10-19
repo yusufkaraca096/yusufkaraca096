@@ -55,8 +55,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          REPO="${{ github.repository }}"
+          # Yarim kalmis taslak yayinlar (indirme linki 404 verir) temizlenir
+          gh api "repos/$REPO/releases?per_page=100" --jq '.[] | select(.draft) | .id' | while read -r id; do
+            gh api -X DELETE "repos/$REPO/releases/$id" || true
+          done
           gh release delete son-surum --yes --cleanup-tag || true
-          gh release create son-surum src/dist/DIA_Veri_Temizleme.exe src/dist/RACA_Teklif.exe \
-            --target "${{ github.sha }}" \
+          sleep 5
+          gh release create son-surum --target "${{ github.sha }}" \
             --title "DIA Veri Temizleme - son surum" \
             --notes "Kurulum gerekmez: indirip cift tiklayin. DIA_Veri_Temizleme.exe (veri temizleme + teklif), RACA_Teklif.exe (sadece teklif motoru). Commit: ${{ github.sha }}"
+          gh release upload son-surum src/dist/DIA_Veri_Temizleme.exe src/dist/RACA_Teklif.exe --clobber
+          gh release edit son-surum --draft=false
+          # Linkler gercekten indiriliyor mu
+          for f in DIA_Veri_Temizleme.exe RACA_Teklif.exe; do
+            kod=$(curl -sL -o /dev/null -w "%{http_code}" -r 0-0 "https://github.com/$REPO/releases/download/son-surum/$f")
+            echo "$f -> $kod"
+            if [ "$kod" != "200" ] && [ "$kod" != "206" ]; then echo "Indirme linki calismiyor: $f"; exit 1; fi
+          done

@@ -30,12 +30,24 @@ jobs:
 
       - name: EXE olustur
         working-directory: src
-        run: pyinstaller --onefile --windowed --name DIA_Veri_Temizleme gui.py
+        run: |
+          pyinstaller --onefile --windowed --name DIA_Veri_Temizleme gui.py
+          pyinstaller --onefile --windowed --name RACA_Teklif teklif_main.py
+
+      - name: Teklif EXE oz testi (PDF uretiyor mu)
+        working-directory: src
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist\RACA_Teklif.exe -ArgumentList '--oz-test', "$PWD\oz_test.pdf" -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or -not (Test-Path oz_test.pdf) -or -not (Test-Path oz_test.pdf.xlsx)) { throw "RACA_Teklif.exe oz testi basarisiz (cikis kodu $($p.ExitCode))" }
+          Write-Host "PDF boyutu: $((Get-Item oz_test.pdf).Length) bayt"
 
       - uses: actions/upload-artifact@v4
         with:
           name: DIA_Veri_Temizleme
-          path: src/dist/DIA_Veri_Temizleme.exe
+          path: |
+            src/dist/DIA_Veri_Temizleme.exe
+            src/dist/RACA_Teklif.exe
 
       - name: Indirme linkini guncelle (son-surum)
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -44,7 +56,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete son-surum --yes --cleanup-tag || true
-          gh release create son-surum src/dist/DIA_Veri_Temizleme.exe \
+          gh release create son-surum src/dist/DIA_Veri_Temizleme.exe src/dist/RACA_Teklif.exe \
             --target "${{ github.sha }}" \
             --title "DIA Veri Temizleme - son surum" \
-            --notes "Kurulum gerekmez: DIA_Veri_Temizleme.exe dosyasini indirip cift tiklayin. Commit: ${{ github.sha }}"
+            --notes "Kurulum gerekmez: indirip cift tiklayin. DIA_Veri_Temizleme.exe (veri temizleme + teklif), RACA_Teklif.exe (sadece teklif motoru). Commit: ${{ github.sha }}"

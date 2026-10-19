@@ -1149,6 +1149,15 @@ def degisiklik_raporu_yaz(fark, sonra, yol, not_siniri=2000, renk_siniri=100000)
 # ============================================================
 # Esleme hafizasi (musteriler arasi)
 # ============================================================
+def kalici_klasor():
+    """Programin musteri klasorunden bagimsiz kalici verileri: %APPDATA%\\RACA_DIA.
+    (EXE'nin yani veya musteri klasoru olmaz: EXE gecici klasorden calisinca veri kayboluyordu.)"""
+    temel = os.environ.get('APPDATA') or os.path.expanduser('~')
+    klasor = os.path.join(temel, 'RACA_DIA')
+    os.makedirs(klasor, exist_ok=True)
+    return klasor
+
+
 def esleme_hafizasi_yolu(program_klasoru):
     return os.path.join(program_klasoru, 'esleme_hafizasi.json')
 

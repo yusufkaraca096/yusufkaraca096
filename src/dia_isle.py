@@ -31,6 +31,14 @@ METIN_KOLONLAR = ['verginumarasi', 'tckimlikno2', 'TC Kimlik No', 'Hesap NO',
                   'ceptel', 'fax', 'Telefon 1', 'Telefon 2', 'Fax', 'postakodu']
 
 
+# Esleme hafizasinin klasoru (None = %APPDATA%\\RACA_DIA; testler gecici klasor verir)
+HAFIZA_KLASORU = None
+
+
+def _hafiza_klasoru():
+    return HAFIZA_KLASORU or ek_kontroller.kalici_klasor()
+
+
 def kurallari_yukle():
     excel_yolu = os.path.join(KLASOR, 'kurallar.xlsx')
     if os.path.exists(excel_yolu):
@@ -365,14 +373,14 @@ def modul_isle(modul_adi, kurallar, mukerrer_mod='incele', dry_run=False, klasor
     eslesme = dict(modul.get('eslesme', {}))
     hafiza_aktif = ayar(modul, 'esleme_hafizasi', modul_adi)
     if hafiza_aktif:
-        hafiza = ek_kontroller.esleme_hafizasi_yukle(KLASOR).get(modul_adi, {})
+        hafiza = ek_kontroller.esleme_hafizasi_yukle(_hafiza_klasoru()).get(modul_adi, {})
         kullanilan = {b: a for b, a in hafiza.items() if b not in eslesme and b in df.columns and a not in df.columns}
         if kullanilan:
             print('  Esleme hafizasindan: ' + ', '.join(b + ' -> ' + a for b, a in kullanilan.items()))
             eslesme.update(kullanilan)
     df = sutun_esle(df, eslesme)
     if hafiza_aktif and modul.get('eslesme'):
-        ek_kontroller.esleme_hafizasi_kaydet(KLASOR, modul_adi, modul['eslesme'])
+        ek_kontroller.esleme_hafizasi_kaydet(_hafiza_klasoru(), modul_adi, modul['eslesme'])
 
     # Degisiklik raporu icin satirlarin okunan Excel'deki numarasi (gecici kolon)
     df = df.copy()

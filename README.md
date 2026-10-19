@@ -6,6 +6,13 @@ muhasebe kodu, ürün ağacı) DIA'ya aktarılabilir hale getiren Tkinter uygula
 **Kullanım rehberi:** programda **📖 Rehber** butonu (Ayarlar penceresinde de var; seçili ayarın
 açıklama ve örneklerine gider) veya [docs/KULLANIM_REHBERI.md](docs/KULLANIM_REHBERI.md).
 
+## Teklif motoru
+
+`RACA_DIA_Teklif_Motoru.xlsx`'in program hali. Veri temizleme programında **💼 Teklif Motoru** butonu veya tek
+başına **RACA_Teklif.exe** (aynı indirme sayfasında). İlk açılışta mevcut teklif Excel'i içe aktarılır.
+Fiyat listesi ve ücretler depoya konmaz; `Belgeler\RACA_Teklif_Veri\teklif.db` dosyasında tutulur, her gün ve
+her önemli değişiklikte `Yedekler` klasörüne yedeklenir. Ayrıntı: rehberde "9. Teklif Motoru".
+
 ## Dosyalar
 
 | Dosya | Görev |
@@ -15,6 +22,7 @@ açıklama ve örneklerine gider) veya [docs/KULLANIM_REHBERI.md](docs/KULLANIM_
 | `src/_ortak.py` | Temizlik fonksiyonları ve **parametrik ayar tanımları** (`AYAR_TANIMLARI`) |
 | `src/ek_kontroller.py` | Ek kontroller (ünvan, vergi dairesi, barkod, birim, IBAN→banka, TDHP, benzer kayıt, değişiklik raporu ...) |
 | `src/ek_ayarlar.py` | Ek kontrollerin parametrik ayar tanımları (modül bazında) |
+| `src/teklif_*.py` | **Teklif motoru**: `teklif_hesap` (hesap), `teklif_veri` (SQLite, içe aktarma, yedek), `teklif_cikti` (PDF/Excel), `teklif_gui` (ekran), `teklif_main` (RACA_Teklif.exe) |
 | `src/rehber.py`, `src/rehber_gui.py` | Kullanım rehberi içeriği ve penceresi (`python src/rehber.py` → docs/KULLANIM_REHBERI.md) |
 | `src/il_ilce.py` | İl / ilçe ayrıştırma ve düzeltme |
 | `src/il_ilce_veri.py` | 81 il, 973 ilçe listesi |

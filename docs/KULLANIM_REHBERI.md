@@ -545,7 +545,7 @@ Kolonların azami karakter sayısı. Uzun olan GEÇERSİZ işaretlenir (DIA'da k
 
 ### esleme_hafizasi
 
-Kurallar'a kaydedilen sütun eşlemeleri program klasöründeki esleme_hafizasi.json'a da yazılır; başka müşteride aynı başlık gelirse sormadan uygulanır.
+Kurallar'a kaydedilen sütun eşlemeleri %APPDATA%\RACA_DIA\esleme_hafizasi.json'a da yazılır; başka müşteride aynı başlık gelirse sormadan uygulanır.
 
 |   |   |
 |---|---|
@@ -1336,7 +1336,94 @@ Her modülde bulunan temel ayarlar.
 | doviz_standart | Döviz adları: Dolar → USD, Avro → EUR, TRY → TL | True |
 | tc_kimlik_11_hane | TC Kimlik No 11 hane kontrolü | True |
 
-## 9. Geliştirici: Yeni Ayar ve Kontrol Eklemek
+## 9. Teklif Motoru
+
+DIA lisans + hizmet teklifi hazırlar; RACA_DIA_Teklif_Motoru.xlsx'in program halidir. Ana ekranda Teklif Motoru butonuyla veya tek başına RACA_Teklif.exe ile açılır (aynı veri kullanılır).
+
+### İlk açılış
+
+1. Program "paket listesi yok" der; Evet deyip mevcut teklif Excel'inizi seçin.
+2. PaketListesi, ADAM SAAT, AYARLAR, KAMPANYALAR, RAKİP ve TEKLİF GEÇMİŞİ sayfaları içe aktarılır.
+3. Fiyatlar programın içine değil, sizin bilgisayarınızdaki veri dosyasına yazılır.
+
+### Teklif hazırlama
+
+1. Müşteri adı, masaüstü ve mobil kullanıcı sayısını girin. Paket tipi eşiğe göre STANDART/ENTERPRISE seçilir (isterseniz elle seçin).
+2. + Paket Ekle: kod, ad veya açıklamada arayın (örn. "e-fatura"), çift tıkla ekleyin. Pencere açık kalır, birden fazla paket eklenebilir.
+3. ✎ işaretli kolonlara çift tıklayıp değiştirin: Adet (boş = kullanıcı sayısı), İnd. %, İnd. Tutar (TL), A/S (adam/saat; boş = ADAM SAAT tablosu). Elle değiştirilen satırlar sarı görünür.
+4. Sabit kalemleri işaretleyin, kampanyayı seçin (indirim % gelir, değiştirilebilir), varsa maliyeti girin.
+5. Kaydet: teklif numarası verilir (RT-2026-0001) ve geçmişe yazılır. PDF / Excel: müşteriye gidecek dosya.
+
+### Hesap formülleri
+
+| Kalem | Formül |
+|---|---|
+| Adet | Masaüstü paket = masaüstü kullanıcı, Mobil paket = mobil kullanıcı, diğerleri = 1 |
+| Birim fiyat | ENTERPRISE ise Ent. fiyat (0 ise Std. fiyat), STANDART ise Std. fiyat |
+| Satır toplamı | birim + (adet - 1) × birim × Kullanıcı % / 100 |
+| Satır neti | toplam - toplam × İnd. % / 100 - İnd. Tutar   (KDV ve tüm alt toplamlar bu netten) |
+| Uyarlama | lisans neti × lisans_yuzdesi % + toplam adam/saat × saatlik_ucret; min_uyarlama ile max_uyarlama arasında |
+| Ara toplam | lisans neti + uyarlama + sabit kalemler |
+| Net toplam | ara toplam - ara toplam × kampanya % |
+| KDV / Genel toplam | net toplam × KDV % / net toplam + KDV |
+| Ödeme planı | Peşin = net × (1 - pesin_indirim %); n taksit = net / n (hepsi KDV dahil gösterilir) |
+| Kâr | net toplam - maliyet; marj = kâr / net toplam |
+| Rakip | bizim saat × saatlik ücret ile aynı saat × rakibin saatlik ücreti karşılaştırılır |
+| Yıllık bakım | (birim + (kullanıcı-1) × birim × Kull.%) × YBH % ; toplam × modül katsayısı × kullanıcı katsayısı |
+
+### Excel'de düzeltilen hatalar
+
+- K24 hücresindeki bozuk formül (#NAME?) lisans neti, ara toplam, net toplam ve ödeme planını bozuyordu.
+- İnd. Tutar kolonu KDV hariç toplamı ve KDV alt toplamını etkilemiyordu.
+- Ödeme planı ve şablondaki NET TOPLAM, net tutar yerine kampanya indirim tutarından hesaplanıyordu.
+- Adam/saat toplamı SUM(O17:O24) idi; ilk 7 paketin saati uyarlamaya girmiyordu.
+- Satır indirimi birim fiyattan (toplamdan değil) hesaplanıyordu.
+- Kampanya seçimi indirim yüzdesine bağlı değildi.
+- ADAM SAAT satırları paket listesine satır sırasıyla bağlıydı; artık paket koduyla tutulur, DIA fiyat listesi güncellense de saatler korunur.
+
+### Teklif geçmişi
+
+Teklif Geçmişi penceresinde arama, Aç/Düzenle, Kopyala (aynı teklifi yeni numarayla), KAZANDI / KAYBETTİ (red nedeni sorulur) / BEKLİYOR işaretleme ve listeyi Excel'e aktarma. Altta kazanma oranı ve kazanılan tutar görünür.
+
+### Veriler / Ayarlar
+
+- Ayarlar, Sabit Kalemler, Kampanyalar, Rakipler ve Paketler / Adam-Saat sekmelerinde çift tık ile düzenleme; değişiklik hemen kaydedilir.
+- DIA Fiyat Listesini Güncelle: DIA'nın yeni fiyat Excel'ini seçin ("Kodu" ve "Std. Fiyat" başlıkları olmalı). Fiyatı değişen, yeni gelen ve listeden kalkan paketler raporlanır; kalkanlar silinmez, pasif yapılır (eski teklifler bozulmaz). Adam/saatler korunur.
+
+| Ayar | Varsayılan | Açıklama |
+|---|---|---|
+| ent_masaustu_esik | 10 | Masaüstü kullanıcı bu sayıyı geçerse paket ENTERPRISE olur |
+| ent_mobil_esik | 10 | Mobil kullanıcı bu sayıyı geçerse paket ENTERPRISE olur |
+| lisans_yuzdesi | 10 | Uyarlama = lisans net toplamı × bu % + adam/saat bedeli |
+| saatlik_ucret | 0 | Saatlik danışman ücreti (KDV hariç) |
+| min_uyarlama | 0 | Uyarlama alt sınırı (KDV hariç) |
+| max_uyarlama | 0 | Uyarlama üst sınırı (0 = sınır yok) |
+| kdv | 20 | KDV oranı (%) |
+| pesin_indirim | 5 | Peşin ödemede indirim (%) |
+| taksitler | 2,3,4 | Ödeme planındaki taksit sayıları (virgülle) |
+| rakip_ayni_saat | 1 | 1: rakip = bizim adam/saat × rakibin saatlik ücreti (aynı iş). 0: Rakipler tablosundaki saat |
+| rakip_ucuz_esik | 10 | Rakip ortalamasından bu % kadar ucuzsak "Rekabetçisiniz" |
+| rakip_pahali_esik | 15 | Rakip ortalamasından bu % kadar pahalıysak "Pahalısınız" |
+| gecerlilik_gun | 15 | Teklifin geçerlilik süresi (gün) |
+| teklif_no_onek | RT | Teklif numarası ön eki: RT-2026-0001 |
+| firma_adi | RACA TEKNOLOJİ | PDF/Excel teklifin başlığındaki firma adı |
+| firma_adres | (boş) | Firma adresi |
+| firma_iletisim | (boş) | Telefon / e-posta / web (tek satır) |
+| logo_yolu | (boş) | Logo dosyası (PNG/JPG). Boşsa logo basılmaz |
+| teklif_notlari | Fiyatlar KDV hariç belirtilmiş olup KDV ayrıca gösterilmiştir. Uyarlama bedeli tahmini adam/saat üzerinden hesaplanmıştır. | Teklifin altına yazılacak şartlar / notlar |
+| ybh_modul_kademe | 5:1; 10:1.1; 20:1.25; 30:1.45; *:1.65 | YBH modül sayısı katsayıları (en fazla:katsayı) |
+| ybh_kullanici_kademe | 5:1; 10:1.1; 25:1.2; 50:1.35; *:1.55 | YBH kullanıcı sayısı katsayıları |
+
+### Veri, yedek ve kayıp kayıt sorunu
+
+Veriler EXE'nin yanına değil Belgeler\RACA_Teklif_Veri\teklif.db dosyasına yazılır. Böylece EXE İndirilenler'den, zip'in içinden çalıştırılsa ya da yeni sürüm başka klasöre konsa da kayıtlar kaybolmaz.
+
+- Otomatik yedek: her gün ilk açılışta, teklif kaydında (en fazla 30 dakikada bir), içe aktarma ve fiyat güncellemesinden önce ve sonra, program kapanırken. Son 30 yedek Yedekler klasöründe tutulur.
+- Veriler > Yedek Al: elle yedek. Yedekten Geri Yükle: seçilen yedeğe döner (mevcut hal önce yedeklenir).
+- Veriler > Veri Klasörü: klasörü açar veya değiştirir (örn. satış ekibi için ortak ağ klasörü; mevcut veri oraya kopyalanır).
+- Bilgisayar değiştirirken Belgeler\RACA_Teklif_Veri klasörünü yeni bilgisayara kopyalamanız yeterli.
+
+## 10. Geliştirici: Yeni Ayar ve Kontrol Eklemek
 
 Kaynak kod: github.com/yusufkaraca096/yusufkaraca096. Değişiklik gönderilince testler çalışır ve yeni EXE aynı indirme linkine konur.
 

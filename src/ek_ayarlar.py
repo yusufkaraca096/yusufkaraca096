@@ -84,7 +84,7 @@ EK_AYAR_TANIMLARI = [
                   'vermesin). Değerler tahminidir, DIA ekranına göre düzeltin.'),
      'formul': 'kolon=uzunluk; kolon=uzunluk', 'ornek': 'carikartkodu=25; unvan=200'},
     {'ayar': 'esleme_hafizasi', 'varsayilan': True, 'tur': 'bool', 'moduller': TUM,
-     'aciklama': ("Kurallar'a kaydedilen sütun eşlemeleri program klasöründeki esleme_hafizasi.json'a da yazılır; "
+     'aciklama': ("Kurallar'a kaydedilen sütun eşlemeleri %APPDATA%\\RACA_DIA\\esleme_hafizasi.json'a da yazılır; "
                   'başka müşteride aynı başlık gelirse sormadan uygulanır.'),
      'formul': 'müşterinin kendi eşlemesi > hafıza (müşterininki önceliklidir)', 'ornek': "'Firma Ünvanı' -> unvan"},
     {'ayar': 'capraz_kontrol', 'varsayilan': '', 'tur': 'metin', 'moduller': TUM,

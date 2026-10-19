@@ -134,6 +134,7 @@ class UcTanUcaTest(unittest.TestCase):
                 'Ulke': ['', None, 'TURKIYE'],
             }).to_excel(os.path.join(d, 'cari_listesi.xlsx'), index=False)
             dia_isle.KLASOR = d
+            dia_isle.HAFIZA_KLASORU = d
             dia_isle.modul_isle('cari', dia_isle.kurallari_yukle(), mukerrer_mod='otomatik')
             df = pd.read_excel(os.path.join(d, 'cari_dia_hazir.xlsx'), dtype=str)
             fark = pd.read_excel(os.path.join(d, 'cari_dia_hazir_DEGISIKLIKLER.xlsx'), dtype=str)

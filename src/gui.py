@@ -161,6 +161,8 @@ class DiaGUI:
         tk.Button(ent_frame, text="🔌 Logo'dan Çek", command=self.logo_ac,
                   bg='#c0392b', fg='white', font=('Arial', 11, 'bold'),
                   padx=15, pady=6).pack(side=tk.LEFT, padx=3)
+        tk.Button(ent_frame, text='💼 Teklif Motoru', command=self.teklif_ac,
+                  bg='#d35400', fg='white', font=('Arial', 10, 'bold'), padx=10, pady=4).pack(side=tk.RIGHT, padx=5)
         tk.Button(ent_frame, text="☁ DIA'ya Gönder", command=self.dia_ac,
                   bg='#2980b9', fg='white', font=('Arial', 11, 'bold'),
                   padx=15, pady=6).pack(side=tk.LEFT, padx=3)
@@ -340,6 +342,10 @@ class DiaGUI:
     def rehber_ac(self):
         from rehber_gui import RehberPenceresi
         RehberPenceresi(self.root)
+
+    def teklif_ac(self):
+        from teklif_gui import TeklifPenceresi
+        TeklifPenceresi(self.root)
 
     def logo_ac(self):
         from entegrasyon_gui import LogoPenceresi

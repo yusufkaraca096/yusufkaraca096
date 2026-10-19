@@ -87,6 +87,7 @@ class UcTanUcaTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             excele_yaz(logo_db().cari_cek(1), d, 'cari_listesi.xlsx')
             dia_isle.KLASOR = d
+            dia_isle.HAFIZA_KLASORU = d
             dia_isle.modul_isle('cari', dia_isle.kurallari_yukle(), mukerrer_mod='otomatik')
             hazir = pd.read_excel(os.path.join(d, 'cari_dia_hazir.xlsx'), dtype=str)
         self.assertEqual(hazir['verginumarasi'][0], '0123456789')

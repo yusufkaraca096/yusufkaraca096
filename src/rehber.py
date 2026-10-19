@@ -360,7 +360,85 @@ def bolumler():
     ]})
 
     # ------------------------------------------------------------------
-    B.append({'baslik': '9. Geliştirici: Yeni Ayar ve Kontrol Eklemek', 'parcalar': [
+    from teklif_veri import AYARLAR as TEKLIF_AYARLARI
+    B.append({'baslik': '9. Teklif Motoru', 'parcalar': [
+        ('p', 'DIA lisans + hizmet teklifi hazırlar; RACA_DIA_Teklif_Motoru.xlsx\'in program halidir. Ana ekranda '
+              'Teklif Motoru butonuyla veya tek başına RACA_Teklif.exe ile açılır (aynı veri kullanılır).'),
+        ('h', 'İlk açılış'),
+        ('adim', [
+            'Program "paket listesi yok" der; Evet deyip mevcut teklif Excel\'inizi seçin.',
+            'PaketListesi, ADAM SAAT, AYARLAR, KAMPANYALAR, RAKİP ve TEKLİF GEÇMİŞİ sayfaları içe aktarılır.',
+            'Fiyatlar programın içine değil, sizin bilgisayarınızdaki veri dosyasına yazılır.',
+        ]),
+        ('h', 'Teklif hazırlama'),
+        ('adim', [
+            'Müşteri adı, masaüstü ve mobil kullanıcı sayısını girin. Paket tipi eşiğe göre STANDART/ENTERPRISE '
+            'seçilir (isterseniz elle seçin).',
+            '+ Paket Ekle: kod, ad veya açıklamada arayın (örn. "e-fatura"), çift tıkla ekleyin. Pencere açık kalır, '
+            'birden fazla paket eklenebilir.',
+            '✎ işaretli kolonlara çift tıklayıp değiştirin: Adet (boş = kullanıcı sayısı), İnd. %, İnd. Tutar (TL), '
+            'A/S (adam/saat; boş = ADAM SAAT tablosu). Elle değiştirilen satırlar sarı görünür.',
+            'Sabit kalemleri işaretleyin, kampanyayı seçin (indirim % gelir, değiştirilebilir), varsa maliyeti girin.',
+            'Kaydet: teklif numarası verilir (RT-2026-0001) ve geçmişe yazılır. PDF / Excel: müşteriye gidecek dosya.',
+        ]),
+        ('h', 'Hesap formülleri'),
+        ('tablo', [['Kalem', 'Formül'], [
+            ['Adet', 'Masaüstü paket = masaüstü kullanıcı, Mobil paket = mobil kullanıcı, diğerleri = 1'],
+            ['Birim fiyat', 'ENTERPRISE ise Ent. fiyat (0 ise Std. fiyat), STANDART ise Std. fiyat'],
+            ['Satır toplamı', 'birim + (adet - 1) × birim × Kullanıcı % / 100'],
+            ['Satır neti', 'toplam - toplam × İnd. % / 100 - İnd. Tutar   (KDV ve tüm alt toplamlar bu netten)'],
+            ['Uyarlama', 'lisans neti × lisans_yuzdesi % + toplam adam/saat × saatlik_ucret; min_uyarlama ile '
+                         'max_uyarlama arasında'],
+            ['Ara toplam', 'lisans neti + uyarlama + sabit kalemler'],
+            ['Net toplam', 'ara toplam - ara toplam × kampanya %'],
+            ['KDV / Genel toplam', 'net toplam × KDV % / net toplam + KDV'],
+            ['Ödeme planı', 'Peşin = net × (1 - pesin_indirim %); n taksit = net / n (hepsi KDV dahil gösterilir)'],
+            ['Kâr', 'net toplam - maliyet; marj = kâr / net toplam'],
+            ['Rakip', 'bizim saat × saatlik ücret ile aynı saat × rakibin saatlik ücreti karşılaştırılır'],
+            ['Yıllık bakım', '(birim + (kullanıcı-1) × birim × Kull.%) × YBH % ; toplam × modül katsayısı × '
+                             'kullanıcı katsayısı'],
+        ]]),
+        ('h', 'Excel\'de düzeltilen hatalar'),
+        ('madde', [
+            'K24 hücresindeki bozuk formül (#NAME?) lisans neti, ara toplam, net toplam ve ödeme planını bozuyordu.',
+            'İnd. Tutar kolonu KDV hariç toplamı ve KDV alt toplamını etkilemiyordu.',
+            'Ödeme planı ve şablondaki NET TOPLAM, net tutar yerine kampanya indirim tutarından hesaplanıyordu.',
+            'Adam/saat toplamı SUM(O17:O24) idi; ilk 7 paketin saati uyarlamaya girmiyordu.',
+            'Satır indirimi birim fiyattan (toplamdan değil) hesaplanıyordu.',
+            'Kampanya seçimi indirim yüzdesine bağlı değildi.',
+            'ADAM SAAT satırları paket listesine satır sırasıyla bağlıydı; artık paket koduyla tutulur, DIA fiyat '
+            'listesi güncellense de saatler korunur.',
+        ]),
+        ('h', 'Teklif geçmişi'),
+        ('p', 'Teklif Geçmişi penceresinde arama, Aç/Düzenle, Kopyala (aynı teklifi yeni numarayla), KAZANDI / '
+              'KAYBETTİ (red nedeni sorulur) / BEKLİYOR işaretleme ve listeyi Excel\'e aktarma. Altta kazanma oranı '
+              've kazanılan tutar görünür.'),
+        ('h', 'Veriler / Ayarlar'),
+        ('madde', [
+            'Ayarlar, Sabit Kalemler, Kampanyalar, Rakipler ve Paketler / Adam-Saat sekmelerinde çift tık ile '
+            'düzenleme; değişiklik hemen kaydedilir.',
+            'DIA Fiyat Listesini Güncelle: DIA\'nın yeni fiyat Excel\'ini seçin ("Kodu" ve "Std. Fiyat" başlıkları '
+            'olmalı). Fiyatı değişen, yeni gelen ve listeden kalkan paketler raporlanır; kalkanlar silinmez, '
+            'pasif yapılır (eski teklifler bozulmaz). Adam/saatler korunur.',
+        ]),
+        ('tablo', [['Ayar', 'Varsayılan', 'Açıklama'],
+                   [[a, '(boş)' if v == '' else str(v).replace('\n', ' '), ac] for a, v, ac in TEKLIF_AYARLARI]]),
+        ('h', 'Veri, yedek ve kayıp kayıt sorunu'),
+        ('p', 'Veriler EXE\'nin yanına değil Belgeler\\RACA_Teklif_Veri\\teklif.db dosyasına yazılır. Böylece EXE '
+              'İndirilenler\'den, zip\'in içinden çalıştırılsa ya da yeni sürüm başka klasöre konsa da kayıtlar '
+              'kaybolmaz.'),
+        ('madde', [
+            'Otomatik yedek: her gün ilk açılışta, teklif kaydında (en fazla 30 dakikada bir), içe aktarma ve '
+            'fiyat güncellemesinden önce ve sonra, program kapanırken. Son 30 yedek Yedekler klasöründe tutulur.',
+            'Veriler > Yedek Al: elle yedek. Yedekten Geri Yükle: seçilen yedeğe döner (mevcut hal önce yedeklenir).',
+            'Veriler > Veri Klasörü: klasörü açar veya değiştirir (örn. satış ekibi için ortak ağ klasörü; mevcut '
+            'veri oraya kopyalanır).',
+            'Bilgisayar değiştirirken Belgeler\\RACA_Teklif_Veri klasörünü yeni bilgisayara kopyalamanız yeterli.',
+        ]),
+    ]})
+
+    # ------------------------------------------------------------------
+    B.append({'baslik': '10. Geliştirici: Yeni Ayar ve Kontrol Eklemek', 'parcalar': [
         ('p', 'Kaynak kod: github.com/yusufkaraca096/yusufkaraca096. Değişiklik gönderilince testler çalışır ve '
               'yeni EXE aynı indirme linkine konur.'),
         ('h', '1) Ayarı tanımlayın: src/ek_ayarlar.py > EK_AYAR_TANIMLARI'),

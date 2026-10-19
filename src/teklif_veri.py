@@ -22,8 +22,6 @@ AYARLAR = [
     ('min_uyarlama', 0, 'Uyarlama alt sınırı (KDV hariç)'),
     ('max_uyarlama', 0, 'Uyarlama üst sınırı (0 = sınır yok)'),
     ('kdv', 20, 'KDV oranı (%)'),
-    ('pesin_indirim', 5, 'Peşin ödemede indirim (%)'),
-    ('taksitler', '2,3,4', 'Ödeme planındaki taksit sayıları (virgülle)'),
     ('rakip_ayni_saat', 1, '1: rakip = bizim adam/saat × rakibin saatlik ücreti (aynı iş). 0: Rakipler tablosundaki saat'),
     ('rakip_ucuz_esik', 10, 'Rakip ortalamasından bu % kadar ucuzsak "Rekabetçisiniz"'),
     ('rakip_pahali_esik', 15, 'Rakip ortalamasından bu % kadar pahalıysak "Pahalısınız"'),
@@ -38,6 +36,35 @@ AYARLAR = [
      'Teklifin altına yazılacak şartlar / notlar'),
     ('ybh_modul_kademe', '5:1; 10:1.1; 20:1.25; 30:1.45; *:1.65', 'YBH modül sayısı katsayıları (en fazla:katsayı)'),
     ('ybh_kullanici_kademe', '5:1; 10:1.1; 25:1.2; 50:1.35; *:1.55', 'YBH kullanıcı sayısı katsayıları'),
+    # --- Teklif kontrolleri (0 = kontrol kapalı)
+    ('max_toplam_indirim', 25, 'Toplam indirim (satır + kampanya) liste fiyatına göre bu %\'yi geçerse KRİTİK uyarı'),
+    ('min_kar_marji', 0, 'Kâr marjı bu %\'nin altına düşerse KRİTİK uyarı (maliyet girilen tekliflerde)'),
+    ('min_saat_ucreti', 0, 'Teklife özel saatlik ücret bu tabanın altına inemez'),
+    ('uyarlama_lisans_min', 0, 'Uyarlama / lisans oranı bu %\'nin altındaysa "riskli düşük uyarlama" uyarısı'),
+    ('uyarlama_lisans_max', 0, 'Uyarlama / lisans oranı bu %\'nin üstündeyse "müşteri itiraz edebilir" uyarısı'),
+    ('yonetici_sifresi', '', 'KRİTİK uyarılı teklifin PDF/Excel çıktısı için yönetici şifresi (boş = sadece uyarı)'),
+    ('fiyat_listesi_max_gun', 60, 'Paket fiyat listesi bu günden eskiyse güncelleme uyarısı'),
+    ('fiyat_listesi_tarihi', '', 'Son fiyat listesi içe aktarma tarihi (otomatik)'),
+    # --- Seyahat
+    ('yol_ucreti', 0, 'Şehir dışı: kişi başı gidiş-dönüş yol ücreti (ziyaret başına)'),
+    ('konaklama_ucreti', 0, 'Şehir dışı: kişi başı gecelik konaklama'),
+    ('gundelik', 0, 'Şehir dışı: kişi başı günlük harcırah'),
+    ('ziyaret_basina_gun', 3, 'Bir ziyarette ortalama kaç gün kalınır (yol sayısı = gün / bu)'),
+    # --- Bakim / destek anlasmasi
+    ('destek_saat_ucreti', 0, 'Bakım anlaşması saat ücreti (0 = saatlik_ucret)'),
+    ('destek_taban_saat', 12, 'Bakım: her müşteri için yıllık taban destek saati'),
+    ('destek_kullanici_saat', 0.5, 'Bakım: kullanıcı başına yıllık ek saat'),
+    ('destek_modul_saat', 0.25, 'Bakım: modül başına yıllık ek saat'),
+    ('destek_entegrasyon_saat', 4, 'Bakım: entegrasyon başına yıllık ek saat'),
+    ('destek_sube_saat', 2, 'Bakım: ek şube başına yıllık ek saat'),
+    ('destek_uyarlama_orani', 10, 'Bakım: uyarlama saatinin bu %\'si yıllık destek saatine eklenir'),
+    ('destek_yerinde_gun_ucreti', 0, 'Bakım: yerinde gün ücreti (0 = 8 × destek saat ücreti)'),
+    ('destek_esikleri', '40; 100', 'Önerilen bakım paketi: yıllık saat < 1. eşik Temel, < 2. eşik Standart, üstü Premium'),
+    # --- 3 yillik maliyet
+    ('tco_yil', 3, 'Toplam sahip olma maliyeti tablosunun yıl sayısı'),
+    ('ybh_baslangic_yili', 2, 'DIA yıllık bakım (YBH) kaçıncı yıldan başlar'),
+    ('kapsam_haric', 'Kapsam dışı talepler (özel rapor / ekran geliştirme, ek eğitim, ek yerinde destek vb.) '
+                     'saatlik ücret üzerinden ayrıca ücretlendirilir.', 'PDF\'te uyarlama kapsamının altına yazılır'),
 ]
 AYAR_VARSAYILAN = {a: v for a, v, _ in AYARLAR}
 SAYI_AYARLARI = {a for a, v, _ in AYARLAR if isinstance(v, (int, float))}
@@ -51,11 +78,88 @@ CREATE TABLE IF NOT EXISTS ayar (ad TEXT PRIMARY KEY, deger TEXT);
 CREATE TABLE IF NOT EXISTS sabit_kalem (ad TEXT PRIMARY KEY, fiyat REAL, aktif INTEGER DEFAULT 1);
 CREATE TABLE IF NOT EXISTS kampanya (ad TEXT PRIMARY KEY, yuzde REAL, durum TEXT, aciklama TEXT);
 CREATE TABLE IF NOT EXISTS rakip (firma TEXT PRIMARY KEY, saat REAL, ucret REAL);
+CREATE TABLE IF NOT EXISTS hizmet (
+    kod TEXT PRIMARY KEY, ad TEXT, hesap TEXT, p1 REAL, p2 REAL, carpan REAL DEFAULT 1, kapsam TEXT,
+    sira INTEGER, aktif INTEGER DEFAULT 1);
+CREATE TABLE IF NOT EXISTS kesif (
+    kod TEXT PRIMARY KEY, soru TEXT, tur TEXT, secenekler TEXT, hedef TEXT, islem TEXT, deger TEXT,
+    esik REAL DEFAULT 0, tetik TEXT, sira INTEGER, aktif INTEGER DEFAULT 1);
+CREATE TABLE IF NOT EXISTS odeme_secenegi (
+    ad TEXT PRIMARY KEY, tur TEXT, taksit INTEGER, indirim REAL, vade_farki REAL, aylik_vade REAL,
+    komisyon REAL, musteriye_goster INTEGER, sira INTEGER);
+CREATE TABLE IF NOT EXISTS bakim_paketi (
+    ad TEXT PRIMARY KEY, saat_carpani REAL, yanit_suresi TEXT, yerinde_gun REAL, indirim REAL,
+    aciklama TEXT, sira INTEGER);
+CREATE TABLE IF NOT EXISTS gerceklesen (no TEXT, kalem TEXT, tahmin REAL, gercek REAL, PRIMARY KEY (no, kalem));
 CREATE TABLE IF NOT EXISTS teklif (
     no TEXT PRIMARY KEY, tarih TEXT, musteri TEXT, paket_tipi TEXT, kullanici TEXT,
     lisans REAL, uyarlama REAL, net REAL, genel_toplam REAL, kampanya TEXT,
     sonuc TEXT DEFAULT 'BEKLİYOR', red_nedeni TEXT, veri TEXT);
 """
+
+
+PAKET_KOLONLARI = ['kod', 'tur', 'ad', 'std_fiyat', 'ent_fiyat', 'kull_yuzde', 'ybh_yuzde', 'aciklama', 'urunler',
+                   'std_saat', 'ent_saat', 'aktif', 'zorunlu']
+
+# ------------------------------------------------------------------ varsayilan kurallar (ornek; Veriler'den degisir)
+# hesap: PAKET_SAAT (paket adam/saatleri), KAYIT (kayit / p1 kayit-saat + p2 hazirlik), KULLANICI (tavan(kullanici /
+# p1 kisi) x p2 saat), ADET (miktar x p1), SABIT (p1), YUZDE (diger hizmetlerin p1 %'si)
+HIZMETLER = [
+    ('kurulum', 'Kurulum ve parametre ayarları', 'PAKET_SAAT', 0, 0,
+     'Paketlerin kurulumu, firma / dönem / şube tanımları, parametre ve kullanıcı yetki ayarları', 1),
+    ('veri_aktarimi', 'Veri aktarımı', 'KAYIT', 2000, 4,
+     'Cari, stok ve diğer kartların temizlenip DIA\'ya aktarılması, açılış bakiyeleri', 2),
+    ('egitim', 'Kullanıcı eğitimi', 'KULLANICI', 8, 8, 'Kullanıcı grup eğitimleri', 3),
+    ('rapor', 'Özel rapor / form tasarımı', 'ADET', 4, 0, 'Müşteriye özel rapor ve form (fatura, irsaliye vb.) tasarımı', 4),
+    ('entegrasyon', 'Entegrasyonlar', 'ADET', 8, 0, 'E-ticaret, POS, banka vb. entegrasyonların kurulumu', 5),
+    ('canli_gecis', 'Canlıya geçiş desteği', 'SABIT', 8, 0, 'Canlıya geçiş günü ve ilk hafta yoğun destek', 6),
+    ('proje', 'Proje yönetimi', 'YUZDE', 10, 0, 'Planlama, koordinasyon, test ve kabul', 7),
+]
+# islem: EKLE (saat ekler), CARP (katsayi), CARP_YUZDE (1 + cevap/100), MIKTAR (hizmet miktarina ekler), BILGI (etkisiz)
+# hedef: hizmet kodu veya * (tum hizmetler)
+KESIF_SORULARI = [
+    ('gecis_programi', 'Şu an hangi programı kullanıyor?', 'SECIM', 'Yok;Logo;Netsis;ETA;Mikro;Excel;Diğer',
+     'veri_aktarimi', 'EKLE', 'Logo=8; Netsis=8; ETA=12; Mikro=8; Excel=4; Diğer=16; Yok=0', 0, '', 1),
+    ('yeni_musteri', 'İlk kez DIA mı alıyor (yeni müşteri)?', 'EVET_HAYIR', '', '', 'BILGI', '', 0, 'EVET', 2),
+    ('sube_sayisi', 'Şube sayısı (merkez dahil)', 'SAYI', '', 'kurulum', 'EKLE', '4', 1, '', 3),
+    ('depo_sayisi', 'Depo sayısı', 'SAYI', '', 'kurulum', 'EKLE', '2', 1, '', 4),
+    ('uretim', 'Üretim yapıyor mu?', 'EVET_HAYIR', '', 'kurulum', 'EKLE', '24', 0, 'EVET', 5),
+    ('e_donusum', 'e-Fatura / e-Arşiv / e-Defter kurulacak mı?', 'EVET_HAYIR', '', 'kurulum', 'EKLE', '8', 0, 'EVET', 6),
+    ('cari_sayisi', 'Aktarılacak cari sayısı', 'SAYI', '', 'veri_aktarimi', 'MIKTAR', '', 0, '', 7),
+    ('stok_sayisi', 'Aktarılacak stok sayısı', 'SAYI', '', 'veri_aktarimi', 'MIKTAR', '', 0, '', 8),
+    ('diger_kayit', 'Diğer aktarılacak kayıt (banka, personel, demirbaş, hesap planı)', 'SAYI', '', 'veri_aktarimi',
+     'MIKTAR', '', 0, '', 9),
+    ('veri_hata_orani', 'Verideki hata / mükerrer oranı (%)', 'SAYI', '', 'veri_aktarimi', 'CARP_YUZDE', '', 0, '', 10),
+    ('rapor_sayisi', 'Özel rapor / form sayısı', 'SAYI', '', 'rapor', 'MIKTAR', '', 0, '', 11),
+    ('entegrasyon_sayisi', 'Entegrasyon sayısı (e-ticaret, POS, banka ...)', 'SAYI', '', 'entegrasyon', 'MIKTAR', '', 0,
+     '', 12),
+    ('ek_egitim_gun', 'Ek eğitim günü (yönetici / ileri seviye)', 'SAYI', '', 'egitim', 'EKLE', '8', 0, '', 13),
+    ('it_personeli_yok', 'Firmada bilgi işlem sorumlusu YOK mu?', 'EVET_HAYIR', '', '*', 'CARP', '1.15', 0, 'EVET', 14),
+    ('acil_proje', 'Canlıya geçiş 1 aydan kısa sürede mi isteniyor?', 'EVET_HAYIR', '', '*', 'CARP', '1.1', 0, 'EVET', 15),
+]
+# tur: PESIN, TAKSIT (havale / cek-senet), KREDI_KARTI. Oranlar 0: kendi bankanizin oranlarini girin.
+ODEME_SECENEKLERI = [
+    ('Peşin (havale / EFT)', 'PESIN', 1, 5, 0, 0, 0, 1, 1),
+    ('Havale 2 taksit', 'TAKSIT', 2, 0, 0, 0, 0, 1, 2),
+    ('Havale 3 taksit', 'TAKSIT', 3, 0, 0, 0, 0, 1, 3),
+    ('Havale 4 taksit', 'TAKSIT', 4, 0, 0, 0, 0, 0, 4),
+    ('Kredi kartı tek çekim', 'KREDI_KARTI', 1, 0, 0, 0, 0, 1, 5),
+    ('Kredi kartı 3 taksit', 'KREDI_KARTI', 3, 0, 0, 0, 0, 1, 6),
+    ('Kredi kartı 6 taksit', 'KREDI_KARTI', 6, 0, 0, 0, 0, 1, 7),
+    ('Kredi kartı 9 taksit', 'KREDI_KARTI', 9, 0, 0, 0, 0, 0, 8),
+    ('Kredi kartı 12 taksit', 'KREDI_KARTI', 12, 0, 0, 0, 0, 0, 9),
+    ('Çek / senet 3 ay', 'TAKSIT', 3, 0, 0, 0, 0, 0, 10),
+]
+BAKIM_PAKETLERI = [
+    ('Temel', 0.6, '1 iş günü', 0, 0, 'Uzaktan destek (telefon / uzak bağlantı), yıllık saat havuzu', 1),
+    ('Standart', 1.0, '4 iş saati', 1, 5, 'Uzaktan destek, yılda 1 gün yerinde ziyaret, sürüm geçiş desteği', 2),
+    ('Premium', 1.5, '2 iş saati', 3, 10, 'Öncelikli destek, yılda 3 gün yerinde, periyodik sistem kontrolü, '
+                                          'eğitim tazeleme', 3),
+]
+# Kampanya kosullari (ice aktarilan kampanya adlarina gore). Dil: 'kullanici>=10', 'soru:kod', 'soru:kod=A|B',
+# 'tarih:12-15..12-31', 'elle' (otomatik onerilmez); ' ve ' ile birlestirilir.
+KAMPANYA_KOSULLARI = {'toplu alım': 'kullanici>=10', 'rakip geçiş': 'soru:gecis_programi=Logo|Netsis|ETA|Mikro',
+                      'yeni müşteri': 'soru:yeni_musteri', 'yıl sonu': 'tarih:12-15..12-31', 'özel kampanya': 'elle'}
 
 
 def _sayi(x, varsayilan=0.0):
@@ -85,13 +189,40 @@ class TeklifVeri:
         self.degisti = False         # son yedekten beri veri degisti mi (kapanista yedek icin)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SEMA)
+        self._kolon_ekle('paket', 'zorunlu', 'TEXT')
+        self._kolon_ekle('kampanya', 'kosul', 'TEXT')
+        self._varsayilanlari_doldur()
         for ad, deger, _ in AYARLAR:
             self.db.execute('INSERT OR IGNORE INTO ayar VALUES (?, ?)', (ad, str(deger)))
         if not self.db.execute('SELECT 1 FROM kampanya').fetchone():
-            self.db.execute("INSERT INTO kampanya VALUES ('YOK', 0, 'AKTİF', 'İndirim uygulanmaz')")
+            self.db.execute("INSERT INTO kampanya (ad, yuzde, durum, aciklama, kosul) "
+                            "VALUES ('YOK', 0, 'AKTİF', 'İndirim uygulanmaz', '')")
         self.db.commit()
         if otomatik_yedek and not self.bugun_yedek_var_mi():
             self.yedek_al('otomatik')
+
+    def _kolon_ekle(self, tablo, kolon, tip):
+        if kolon not in [r[1] for r in self.db.execute('PRAGMA table_info(%s)' % tablo)]:
+            self.db.execute('ALTER TABLE %s ADD COLUMN %s %s' % (tablo, kolon, tip))
+
+    def _varsayilanlari_doldur(self):
+        """Bos kural tablolarini ornek kurallarla doldurur (kullanici sonra Veriler'den degistirir)."""
+        def bos(t):
+            return not self.db.execute('SELECT 1 FROM %s LIMIT 1' % t).fetchone()
+        if bos('hizmet'):
+            self.db.executemany('INSERT INTO hizmet (kod, ad, hesap, p1, p2, kapsam, sira, carpan, aktif) '
+                                'VALUES (?,?,?,?,?,?,?,1,1)', HIZMETLER)
+        if bos('kesif'):
+            self.db.executemany('INSERT INTO kesif (kod, soru, tur, secenekler, hedef, islem, deger, esik, tetik, sira, '
+                                'aktif) VALUES (?,?,?,?,?,?,?,?,?,?,1)', KESIF_SORULARI)
+        if bos('odeme_secenegi'):
+            secenekler = list(ODEME_SECENEKLERI)
+            eski = self.db.execute("SELECT deger FROM ayar WHERE ad='pesin_indirim'").fetchone()
+            if eski:       # ilk surumdeki pesin indirim ayari korunur
+                secenekler[0] = secenekler[0][:3] + (_sayi(eski[0], 5),) + secenekler[0][4:]
+            self.db.executemany('INSERT INTO odeme_secenegi VALUES (?,?,?,?,?,?,?,?,?)', secenekler)
+        if bos('bakim_paketi'):
+            self.db.executemany('INSERT INTO bakim_paketi VALUES (?,?,?,?,?,?,?)', BAKIM_PAKETLERI)
 
     # ------------------------------------------------------------ yedek
     def yedekler(self):
@@ -173,6 +304,31 @@ class TeklifVeri:
     def rakipler(self):
         return [dict(r) for r in self.db.execute('SELECT * FROM rakip ORDER BY firma')]
 
+    def kurallar(self, gecmis=True):
+        """Hesap motoruna giden kural tablolari (teklif_hesap.hesapla 'kurallar' parametresi)."""
+        k = {
+            'hizmetler': [dict(r) for r in self.db.execute('SELECT * FROM hizmet WHERE aktif=1 ORDER BY sira, kod')],
+            'sorular': [dict(r) for r in self.db.execute('SELECT * FROM kesif WHERE aktif=1 ORDER BY sira, kod')],
+            'odeme': [dict(r) for r in self.db.execute('SELECT * FROM odeme_secenegi ORDER BY sira, ad')],
+            'bakim': [dict(r) for r in self.db.execute('SELECT * FROM bakim_paketi ORDER BY sira, ad')],
+            'kampanyalar': self.kampanyalar(),
+        }
+        if gecmis:
+            k['gecmis'] = self.gecmis_ozeti()
+        return k
+
+    def gecmis_ozeti(self):
+        """Satis asistani icin sonuclanmis teklifler: [{no, net, genel_toplam, sonuc, indirim, kullanici, red}]"""
+        sonuc = []
+        for r in self.db.execute("SELECT no, net, genel_toplam, sonuc, red_nedeni, veri FROM teklif "
+                                 "WHERE sonuc IN ('KAZANDI', 'KAYBETTİ')"):
+            g = json.loads(r['veri']) if r['veri'] else {}
+            sonuc.append({'no': r['no'], 'net': r['net'] or 0, 'genel_toplam': r['genel_toplam'] or 0,
+                          'sonuc': r['sonuc'], 'red': r['red_nedeni'] or '',
+                          'indirim': float((g.get('_ozet') or {}).get('toplam_indirim_yuzde', g.get('kampanya_yuzde') or 0)),
+                          'kullanici': int(g.get('masaustu', 0) or 0) + int(g.get('mobil', 0) or 0)})
+        return sonuc
+
     # ------------------------------------------------------------ yazma
     def ayar_yaz(self, ad, deger):
         self.degisti = True
@@ -210,6 +366,10 @@ class TeklifVeri:
         self.degisti = True
         no = no or girdi.get('teklif_no') or self.yeni_teklif_no()
         girdi = dict(girdi, teklif_no=no)
+        # Gerceklesen saat raporu ve satis asistani icin o anki tahminler saklanir (fiyatlar sonra degisse de)
+        girdi['_ozet'] = {'hizmet': {h['kod']: h['saat'] for h in sonuc.get('hizmet', {}).get('kalemler', [])},
+                          'toplam_indirim_yuzde': sonuc.get('kontrol', {}).get('toplam_indirim_yuzde', 0),
+                          'genel_toplam': sonuc['genel_toplam']}
         eski = self.db.execute('SELECT sonuc, red_nedeni FROM teklif WHERE no=?', (no,)).fetchone()
         with self.db:
             self.db.execute('INSERT OR REPLACE INTO teklif VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', (
@@ -244,6 +404,52 @@ class TeklifVeri:
         with self.db:
             self.db.execute('DELETE FROM teklif WHERE no=?', (no,))
 
+    def _paket_yaz(self, p):
+        self.db.execute('INSERT OR REPLACE INTO paket (%s) VALUES (%s)' % (
+            ','.join(PAKET_KOLONLARI), ','.join('?' * len(PAKET_KOLONLARI))), [p.get(k) for k in PAKET_KOLONLARI])
+
+    # ------------------------------------------------------------ revizyon / gerceklesen saat
+    def revizyon_no(self, no):
+        """RT-2026-0001 veya RT-2026-0001-R1 -> bir sonraki revizyon numarasi."""
+        ana = re.sub(r'-R\d+$', '', no)
+        en_buyuk = 0
+        for r in self.db.execute('SELECT no FROM teklif WHERE no LIKE ?', (ana + '-R%',)):
+            m = re.search(r'-R(\d+)$', r['no'])
+            if m:
+                en_buyuk = max(en_buyuk, int(m.group(1)))
+        return '%s-R%d' % (ana, en_buyuk + 1)
+
+    def gerceklesen_yaz(self, no, kalemler):
+        """kalemler: {kalem: (tahmin, gercek)}"""
+        self.degisti = True
+        with self.db:
+            self.db.execute('DELETE FROM gerceklesen WHERE no=?', (no,))
+            for kalem, (tahmin, gercek) in kalemler.items():
+                if gercek is not None:
+                    self.db.execute('INSERT INTO gerceklesen VALUES (?,?,?,?)', (no, kalem, tahmin, gercek))
+
+    def gerceklesen_oku(self, no):
+        return {r['kalem']: (r['tahmin'], r['gercek'])
+                for r in self.db.execute('SELECT * FROM gerceklesen WHERE no=?', (no,))}
+
+    def tahmin_gercek_raporu(self):
+        """Hizmet kalemi bazinda: proje sayisi, toplam tahmin / gercek saat, sapma %, onerilen carpan."""
+        adlar = {r['kod']: (r['ad'], r['carpan'] or 1) for r in self.db.execute('SELECT kod, ad, carpan FROM hizmet')}
+        rapor = []
+        for r in self.db.execute('SELECT kalem, COUNT(*) n, SUM(tahmin) t, SUM(gercek) g FROM gerceklesen '
+                                 'GROUP BY kalem ORDER BY kalem'):
+            t, g = r['t'] or 0, r['g'] or 0
+            ad, carpan = adlar.get(r['kalem'], (r['kalem'], 1))
+            rapor.append({'kalem': r['kalem'], 'ad': ad, 'proje': r['n'], 'tahmin': t, 'gercek': g,
+                          'sapma': round((g / t - 1) * 100, 1) if t else None, 'carpan': carpan,
+                          'onerilen_carpan': round(carpan * g / t, 2) if t and g else None})
+        return rapor
+
+    def carpan_yaz(self, kalem, carpan):
+        self.degisti = True
+        with self.db:
+            self.db.execute('UPDATE hizmet SET carpan=? WHERE kod=?', (carpan, kalem))
+
     # ------------------------------------------------------------ ice aktarma
     def excelden_ice_aktar(self, yol):
         """RACA_DIA_Teklif_Motoru.xlsx'ten paket listesi, adam/saat, ayarlar, kampanya, rakip, gecmis."""
@@ -267,7 +473,7 @@ class TeklifVeri:
                 'std_fiyat': _sayi(ws.cell(r, 4).value), 'ent_fiyat': _sayi(ws.cell(r, 5).value),
                 'kull_yuzde': _sayi(ws.cell(r, 6).value), 'ybh_yuzde': _sayi(ws.cell(r, 7).value),
                 'aciklama': _metin(ws.cell(r, 8).value), 'urunler': _metin(ws.cell(r, 9).value),
-                'std_saat': 0.0, 'ent_saat': 0.0, 'aktif': 1}
+                'zorunlu': zorunlu_metni(ws.cell(r, 10).value), 'std_saat': 0.0, 'ent_saat': 0.0, 'aktif': 1}
         rapor.append('%d paket' % len(paketler))
 
         if 'ADAM SAAT' in wb.sheetnames:
@@ -313,7 +519,8 @@ class TeklifVeri:
                 if ad:
                     kampanyalar.append({'ad': ad, 'yuzde': _sayi(ws.cell(r, 2).value),
                                         'durum': _metin(ws.cell(r, 3).value) or 'AKTİF',
-                                        'aciklama': _metin(ws.cell(r, 4).value)})
+                                        'aciklama': _metin(ws.cell(r, 4).value),
+                                        'kosul': KAMPANYA_KOSULLARI.get(ad.replace('İ', 'i').lower(), '')})
             rapor.append('%d kampanya' % len(kampanyalar))
 
         rakipler = []
@@ -331,8 +538,8 @@ class TeklifVeri:
             # Bilinen kodlarin saatleri korunur, listede olmayanlar pasif yapilir (eski teklifler bozulmasin)
             self.db.execute('UPDATE paket SET aktif=0')
             for p in paketler.values():
-                self.db.execute('INSERT OR REPLACE INTO paket VALUES (:kod,:tur,:ad,:std_fiyat,:ent_fiyat,:kull_yuzde,'
-                                ':ybh_yuzde,:aciklama,:urunler,:std_saat,:ent_saat,:aktif)', p)
+                self._paket_yaz(p)
+            ayarlar['fiyat_listesi_tarihi'] = datetime.now().strftime('%Y-%m-%d')
             for ad, deger in ayarlar.items():
                 self.db.execute('INSERT OR REPLACE INTO ayar VALUES (?, ?)', (ad, str(deger)))
             for ad, fiyat in sabitler.items():
@@ -340,7 +547,8 @@ class TeklifVeri:
             if kampanyalar:
                 self.db.execute('DELETE FROM kampanya')
                 for k in kampanyalar:
-                    self.db.execute('INSERT OR REPLACE INTO kampanya VALUES (:ad,:yuzde,:durum,:aciklama)', k)
+                    self.db.execute('INSERT OR REPLACE INTO kampanya (ad, yuzde, durum, aciklama, kosul) '
+                                    'VALUES (:ad,:yuzde,:durum,:aciklama,:kosul)', k)
             if rakipler:
                 self.db.execute('DELETE FROM rakip')
                 for k in rakipler:
@@ -372,7 +580,7 @@ class TeklifVeri:
                      'ent. fiyat': 'ent_fiyat', 'ent fiyat': 'ent_fiyat', 'enterprise fiyat': 'ent_fiyat',
                      'kullanıcı %': 'kull_yuzde', 'kullanici %': 'kull_yuzde', 'ybh %': 'ybh_yuzde',
                      'açıklama': 'aciklama', 'aciklama': 'aciklama', 'ürünler': 'urunler', 'urunler': 'urunler',
-                     'tür': 'tur', 'tur': 'tur', 'grup': 'tur'}
+                     'tür': 'tur', 'tur': 'tur', 'grup': 'tur', 'zorunlu': 'zorunlu'}
         yeni = {}
         for ws in wb.worksheets:
             satirlar = list(ws.iter_rows(values_only=True))
@@ -393,7 +601,8 @@ class TeklifVeri:
                         yeni[kod] = {'kod': kod, 'tur': _metin(al('tur')), 'ad': _metin(al('ad')),
                                      'std_fiyat': _sayi(al('std_fiyat')), 'ent_fiyat': _sayi(al('ent_fiyat')),
                                      'kull_yuzde': _sayi(al('kull_yuzde')), 'ybh_yuzde': _sayi(al('ybh_yuzde')),
-                                     'aciklama': _metin(al('aciklama')), 'urunler': _metin(al('urunler'))}
+                                     'aciklama': _metin(al('aciklama')), 'urunler': _metin(al('urunler')),
+                                     'zorunlu': zorunlu_metni(al('zorunlu'))}
                     break
             if yeni:
                 break
@@ -412,13 +621,59 @@ class TeklifVeri:
                 p['std_saat'] = eski.get(kod, {}).get('std_saat', 0)
                 p['ent_saat'] = eski.get(kod, {}).get('ent_saat', 0)
                 p['aktif'] = 1
-                self.db.execute('INSERT OR REPLACE INTO paket VALUES (:kod,:tur,:ad,:std_fiyat,:ent_fiyat,:kull_yuzde,'
-                                ':ybh_yuzde,:aciklama,:urunler,:std_saat,:ent_saat,:aktif)', p)
+                self._paket_yaz(p)
+            self.db.execute('INSERT OR REPLACE INTO ayar VALUES (?, ?)',
+                            ('fiyat_listesi_tarihi', datetime.now().strftime('%Y-%m-%d')))
         return {'toplam': len(yeni), 'fiyati_degisen': degisen, 'yeni': eklenen, 'listeden_kalkan': kalkan}
 
 
+def zorunlu_metni(x):
+    """'[scf, kasa]' -> 'scf, kasa'; '[]' -> ''"""
+    return ', '.join(p.strip() for p in _metin(x).strip('[]').split(',') if p.strip())
+
+
+def musteri_veri_ozeti(klasor):
+    """Veri temizleme programinin musteri klasorunden kayit sayilari ve hata orani.
+    Doner: {'cari': n, 'stok': n, 'diger': n, 'hata_orani': %, 'dosyalar': [...]}"""
+    from openpyxl import load_workbook
+    sonuc = {'cari': 0, 'stok': 0, 'diger': 0, 'hata_orani': 0.0, 'dosyalar': []}
+    toplam, sorunlu = 0, 0
+    for modul in ('cari', 'stok', 'banka', 'personel', 'demirbas', 'hesapplan'):
+        for ad in (modul + '_dia_hazir.xlsx', modul + '_listesi.xlsx'):
+            yol = os.path.join(klasor, ad)
+            if not os.path.exists(yol):
+                continue
+            try:
+                wb = load_workbook(yol, read_only=True)
+                n = max(wb.active.max_row - 1, 0)
+                wb.close()
+            except Exception:
+                continue
+            sonuc['cari' if modul == 'cari' else 'stok' if modul == 'stok' else 'diger'] += n
+            sonuc['dosyalar'].append('%s (%d)' % (ad, n))
+            toplam += n
+            ozet = os.path.join(klasor, modul + '_OZET.xlsx')
+            if os.path.exists(ozet):
+                try:
+                    import pandas as pd
+                    detay = pd.read_excel(ozet, sheet_name='DETAY')
+                    sorunlu += min(detay['satir'].nunique(), n)
+                except Exception:
+                    pass
+            break
+    if toplam:
+        sonuc['hata_orani'] = round(sorunlu * 100.0 / toplam, 1)
+    return sonuc
+
+
+def sifre_ozeti(sifre):
+    import hashlib
+    return hashlib.sha256(('raca-teklif:' + sifre).encode('utf-8')).hexdigest() if sifre else ''
+
+
 def _tablo_adi(t):
-    if t not in ('paket', 'ayar', 'sabit_kalem', 'kampanya', 'rakip'):
+    if t not in ('paket', 'ayar', 'sabit_kalem', 'kampanya', 'rakip', 'hizmet', 'kesif', 'odeme_secenegi',
+                 'bakim_paketi'):
         raise ValueError('Bilinmeyen tablo: ' + str(t))
     return t
 

@@ -1346,30 +1346,68 @@ DIA lisans + hizmet teklifi hazırlar; RACA_DIA_Teklif_Motoru.xlsx'in program ha
 2. PaketListesi, ADAM SAAT, AYARLAR, KAMPANYALAR, RAKİP ve TEKLİF GEÇMİŞİ sayfaları içe aktarılır.
 3. Fiyatlar programın içine değil, sizin bilgisayarınızdaki veri dosyasına yazılır.
 
-### Teklif hazırlama
+### Teklif hazırlama (sekmeler)
 
-1. Müşteri adı, masaüstü ve mobil kullanıcı sayısını girin. Paket tipi eşiğe göre STANDART/ENTERPRISE seçilir (isterseniz elle seçin).
-2. + Paket Ekle: kod, ad veya açıklamada arayın (örn. "e-fatura"), çift tıkla ekleyin. Pencere açık kalır, birden fazla paket eklenebilir.
-3. ✎ işaretli kolonlara çift tıklayıp değiştirin: Adet (boş = kullanıcı sayısı), İnd. %, İnd. Tutar (TL), A/S (adam/saat; boş = ADAM SAAT tablosu). Elle değiştirilen satırlar sarı görünür.
-4. Sabit kalemleri işaretleyin, kampanyayı seçin (indirim % gelir, değiştirilebilir), varsa maliyeti girin.
-5. Kaydet: teklif numarası verilir (RT-2026-0001) ve geçmişe yazılır. PDF / Excel: müşteriye gidecek dosya.
+1. Müşteri: ad, kullanıcı sayıları, yetkili / telefon / e-posta / VKN. Paket tipi eşiğe göre seçilir. Etiket (Ekonomik / Önerilen / Kapsamlı) alternatif tekliflerde kullanılır.
+2. 1) Paketler: + Paket Ekle ile arayın, ekleyin. Adet, İnd. %, İnd. Tutar, A/S kolonlarına çift tıklayıp değiştirin. Sabit kalemler, kampanya, maliyet ve bu teklife özel saat ücreti de burada.
+3. 2) Keşif & Uyarlama: soruları cevaplayın. Sağdaki hizmet dökümü her kalemin saatini ve "neye göre" hesaplandığını gösterir. Saat kolonuna çift tıklayıp elle değiştirebilirsiniz (boş = öneri). Müşteri verisinden doldur: veri temizleme klasöründen cari/stok sayısını ve hata oranını alır. Şehir dışıysa yerinde gün ve kişi sayısını girin.
+4. 3) Ödeme / Taksit: her seçenekte müşterinin ödeyeceği, bankanın keseceği komisyon ve size kalan tutar. PDF kolonuna çift tıklayarak müşteriye hangi seçeneklerin sunulacağını belirleyin.
+5. 4) Bakım Anlaşması: önerilen paket ve hesabın dökümü; teklife eklenecek paketi seçin.
+6. 5) Satış Asistanı & Kontroller: tahmini kazanma ihtimali, öneriler ve kritik hatalar.
+7. Kaydet: numara verilir. Revizyon Kaydet: aynı teklifin -R1, -R2 sürümü (eskisi korunur). PDF / Excel: kritik hata varsa yönetici şifresi (tanımlıysa) veya onay istenir.
 
-### Hesap formülleri
+### Uyarlama nasıl hesaplanır (hizmet dökümü)
 
-| Kalem | Formül |
+| Hesap türü | Formül | Örnek hizmet |
+|---|---|---|
+| PAKET_SAAT | Paketlerin ADAM SAAT tablosundaki saatleri toplamı | Kurulum ve parametre |
+| KAYIT | kayıt sayısı ÷ P1 (kayıt/saat) + P2 (hazırlık saati) | Veri aktarımı |
+| KULLANICI | tavan(kullanıcı ÷ P1 kişi) × P2 saat | Kullanıcı eğitimi |
+| ADET | miktar × P1 saat | Özel rapor, entegrasyon |
+| SABIT | P1 saat | Canlıya geçiş desteği |
+| YUZDE | diğer hizmetlerin P1 %'si | Proje yönetimi |
+
+Sonra keşif cevapları uygulanır: EKLE (saat ekler; SAYI sorularında eşiği aşan her birim için), CARP (katsayı, * = tüm hizmetler; örn. IT personeli yoksa ×1,15), CARP_YUZDE (veri hata oranı %18 ise ×1,18), MIKTAR (kayıt/rapor/entegrasyon sayısı). En son kalibrasyon çarpanı uygulanır. Uyarlama = toplam saat × saat ücreti + lisans × lisans_yuzdesi; alt/üst sınır uygulanır. Hizmet kalemleri ve sorular Veriler > Hizmet Kalemleri / Keşif Soruları'ndan değiştirilir, yeni soru eklenebilir.
+
+### Tahminleri gerçekle düzeltmek (kalibrasyon)
+
+1. Proje bitince Geçmiş > teklifi seçin > Gerçekleşen Saat Gir: her hizmet için gerçek saati yazın.
+2. Geçmiş > Tahmin / Gerçek Raporu: hizmet bazında sapma (örn. eğitim %+30) ve önerilen çarpan.
+3. Satırı seçip "önerilen çarpanı uygula": sonraki tekliflerde o hizmetin saati otomatik düzelir.
+
+### Kontroller
+
+- KRİTİK: paketin kullanıcı sınırı aşıldı (açıklamada "Max 3 kullanıcı"), "modül eklenemez" paketine modül eklendi, modülün gerektirdiği ana modüller (DIA listesindeki Zorunlu kolonu) teklifte yok — eksikleri içeren paketler önerilir; toplam indirim max_toplam_indirim'i, kâr marjı min_kar_marji'nı aştı; saat ücreti taban altında veya tanımsız.
+- UYARI: bir paketin modüllerinin yarıdan fazlası başka pakette zaten var (çift ücret), keşif formu boş, geçiş var ama kayıt sayısı yok, yetkili bilgisi eksik, fiyat listesi eski, seçilen kampanyanın koşulu sağlanmıyor, uyarlama/lisans oranı sınır dışında.
+- Veriler > Ayarlar > yonetici_sifresi doluysa KRİTİK hatalı teklifin PDF/Excel çıktısı şifre ister (şifre açık yazılmaz, özeti saklanır).
+
+### Satış asistanı neye göre öneri yapar
+
+- Rakip: aynı saat × rakip saat ücreti ortalamasıyla karşılaştırır; pahalıysanız ortalamaya inmek için gereken indirimi TL ve % olarak söyler.
+- En yüksek indirim: kâr marjı alt sınırını ve toplam indirim üst sınırını bozmadan verilebilecek kampanya %.
+- Kampanya uygunluğu: kampanyanın Koşul alanı (kullanici>=10, soru:gecis_programi=Logo|Netsis, soru:yeni_musteri, tarih:12-15..12-31; " ve " ile birleşir; "elle" = otomatik önerilmez).
+- Geçmiş: sonuçlanan tekliflerin kazanma oranı, benzer büyüklükteki (±%40) tekliflerin oranı, kazanılan ve kaybedilenlerdeki ortalama indirim, kayıp nedenlerinde "fiyat" ağırlığı.
+- Ödeme: peşin indirimin müşteriye kazandırdığı tutar; kredi kartında komisyonun size kalan kısmı ve onu karşılayan vade farkı.
+- Tahmini kazanma ihtimali: 50 puandan başlar; rakip konumu (±), uygun kampanya (+5), kritik hata (-10); yeterli geçmiş varsa benzer tekliflerin kazanma oranıyla harmanlanır. Kesin değil, yön göstericidir.
+
+### Taksit, vade farkı ve kredi kartı komisyonu
+
+| Tür | Hesap |
 |---|---|
-| Adet | Masaüstü paket = masaüstü kullanıcı, Mobil paket = mobil kullanıcı, diğerleri = 1 |
-| Birim fiyat | ENTERPRISE ise Ent. fiyat (0 ise Std. fiyat), STANDART ise Std. fiyat |
-| Satır toplamı | birim + (adet - 1) × birim × Kullanıcı % / 100 |
-| Satır neti | toplam - toplam × İnd. % / 100 - İnd. Tutar   (KDV ve tüm alt toplamlar bu netten) |
-| Uyarlama | lisans neti × lisans_yuzdesi % + toplam adam/saat × saatlik_ucret; min_uyarlama ile max_uyarlama arasında |
-| Ara toplam | lisans neti + uyarlama + sabit kalemler |
-| Net toplam | ara toplam - ara toplam × kampanya % |
-| KDV / Genel toplam | net toplam × KDV % / net toplam + KDV |
-| Ödeme planı | Peşin = net × (1 - pesin_indirim %); n taksit = net / n (hepsi KDV dahil gösterilir) |
-| Kâr | net toplam - maliyet; marj = kâr / net toplam |
-| Rakip | bizim saat × saatlik ücret ile aynı saat × rakibin saatlik ücreti karşılaştırılır |
-| Yıllık bakım | (birim + (kullanıcı-1) × birim × Kull.%) × YBH % ; toplam × modül katsayısı × kullanıcı katsayısı |
+| PESIN | net × (1 - indirim %) |
+| TAKSIT (havale, çek/senet) | net × (1 + vade farkı % + aylık vade % × (taksit+1)/2) |
+| KREDI_KARTI | müşteri: net × (1 + vade farkı %); banka komisyonu: KDV dahil tahsilat × komisyon %; size kalan = KDV hariç tutar - komisyon |
+
+Komisyonu tam karşılayan vade farkı = 1 / (1 - komisyon × (1 + KDV)) - 1. Örn. %4,5 komisyon, %20 KDV için yaklaşık %5,7. Bankanızın oranlarını Veriler > Ödeme Seçenekleri'ne girin.
+
+### Bakım anlaşması neye göre belirlenir
+
+Yıllık destek saati = taban saat + kullanıcı × destek_kullanici_saat + modül sayısı × destek_modul_saat + entegrasyon × destek_entegrasyon_saat + ek şube × destek_sube_saat + uyarlama saatinin destek_uyarlama_orani %'si; IT personeli yok gibi genel katsayılar da uygulanır. Paket fiyatı = (yıllık saat × paket çarpanı × destek saat ücreti + yerinde gün × gün ücreti) × (1 - indirim). Önerilen paket yıllık saate göre seçilir (destek_esikleri: örn. 40 saatin altı Temel, 100'ün altı Standart, üstü Premium). Paketler (saat çarpanı, yanıt süresi, yerinde gün, indirim, kapsam) Veriler > Bakım Paketleri'nden değiştirilir. DIA'nın yıllık bakımı (YBH) ayrıca hesaplanır ve 3 yıllık toplam maliyet tablosunda gösterilir.
+
+### Alternatif teklif ve revizyon
+
+- Aynı müşteri için Ekonomik / Önerilen / Kapsamlı teklifleri ayrı kaydedin (Etiket alanı). Geçmiş'te Ctrl ile 2-4 tanesini seçip "Seçilenleri Karşılaştır": yan yana karşılaştırma PDF'i.
+- Revizyon Kaydet: RT-2026-0001 → RT-2026-0001-R1; PDF başlığında "Revizyon 1" yazar, kayıtta önceki sürümle genel toplam farkı gösterilir.
 
 ### Excel'de düzeltilen hatalar
 
@@ -1399,8 +1437,6 @@ Teklif Geçmişi penceresinde arama, Aç/Düzenle, Kopyala (aynı teklifi yeni n
 | min_uyarlama | 0 | Uyarlama alt sınırı (KDV hariç) |
 | max_uyarlama | 0 | Uyarlama üst sınırı (0 = sınır yok) |
 | kdv | 20 | KDV oranı (%) |
-| pesin_indirim | 5 | Peşin ödemede indirim (%) |
-| taksitler | 2,3,4 | Ödeme planındaki taksit sayıları (virgülle) |
 | rakip_ayni_saat | 1 | 1: rakip = bizim adam/saat × rakibin saatlik ücreti (aynı iş). 0: Rakipler tablosundaki saat |
 | rakip_ucuz_esik | 10 | Rakip ortalamasından bu % kadar ucuzsak "Rekabetçisiniz" |
 | rakip_pahali_esik | 15 | Rakip ortalamasından bu % kadar pahalıysak "Pahalısınız" |
@@ -1413,6 +1449,30 @@ Teklif Geçmişi penceresinde arama, Aç/Düzenle, Kopyala (aynı teklifi yeni n
 | teklif_notlari | Fiyatlar KDV hariç belirtilmiş olup KDV ayrıca gösterilmiştir. Uyarlama bedeli tahmini adam/saat üzerinden hesaplanmıştır. | Teklifin altına yazılacak şartlar / notlar |
 | ybh_modul_kademe | 5:1; 10:1.1; 20:1.25; 30:1.45; *:1.65 | YBH modül sayısı katsayıları (en fazla:katsayı) |
 | ybh_kullanici_kademe | 5:1; 10:1.1; 25:1.2; 50:1.35; *:1.55 | YBH kullanıcı sayısı katsayıları |
+| max_toplam_indirim | 25 | Toplam indirim (satır + kampanya) liste fiyatına göre bu %'yi geçerse KRİTİK uyarı |
+| min_kar_marji | 0 | Kâr marjı bu %'nin altına düşerse KRİTİK uyarı (maliyet girilen tekliflerde) |
+| min_saat_ucreti | 0 | Teklife özel saatlik ücret bu tabanın altına inemez |
+| uyarlama_lisans_min | 0 | Uyarlama / lisans oranı bu %'nin altındaysa "riskli düşük uyarlama" uyarısı |
+| uyarlama_lisans_max | 0 | Uyarlama / lisans oranı bu %'nin üstündeyse "müşteri itiraz edebilir" uyarısı |
+| yonetici_sifresi | (boş) | KRİTİK uyarılı teklifin PDF/Excel çıktısı için yönetici şifresi (boş = sadece uyarı) |
+| fiyat_listesi_max_gun | 60 | Paket fiyat listesi bu günden eskiyse güncelleme uyarısı |
+| fiyat_listesi_tarihi | (boş) | Son fiyat listesi içe aktarma tarihi (otomatik) |
+| yol_ucreti | 0 | Şehir dışı: kişi başı gidiş-dönüş yol ücreti (ziyaret başına) |
+| konaklama_ucreti | 0 | Şehir dışı: kişi başı gecelik konaklama |
+| gundelik | 0 | Şehir dışı: kişi başı günlük harcırah |
+| ziyaret_basina_gun | 3 | Bir ziyarette ortalama kaç gün kalınır (yol sayısı = gün / bu) |
+| destek_saat_ucreti | 0 | Bakım anlaşması saat ücreti (0 = saatlik_ucret) |
+| destek_taban_saat | 12 | Bakım: her müşteri için yıllık taban destek saati |
+| destek_kullanici_saat | 0.5 | Bakım: kullanıcı başına yıllık ek saat |
+| destek_modul_saat | 0.25 | Bakım: modül başına yıllık ek saat |
+| destek_entegrasyon_saat | 4 | Bakım: entegrasyon başına yıllık ek saat |
+| destek_sube_saat | 2 | Bakım: ek şube başına yıllık ek saat |
+| destek_uyarlama_orani | 10 | Bakım: uyarlama saatinin bu %'si yıllık destek saatine eklenir |
+| destek_yerinde_gun_ucreti | 0 | Bakım: yerinde gün ücreti (0 = 8 × destek saat ücreti) |
+| destek_esikleri | 40; 100 | Önerilen bakım paketi: yıllık saat < 1. eşik Temel, < 2. eşik Standart, üstü Premium |
+| tco_yil | 3 | Toplam sahip olma maliyeti tablosunun yıl sayısı |
+| ybh_baslangic_yili | 2 | DIA yıllık bakım (YBH) kaçıncı yıldan başlar |
+| kapsam_haric | Kapsam dışı talepler (özel rapor / ekran geliştirme, ek eğitim, ek yerinde destek vb.) saatlik ücret üzerinden ayrıca ücretlendirilir. | PDF'te uyarlama kapsamının altına yazılır |
 
 ### Veri, yedek ve kayıp kayıt sorunu
 

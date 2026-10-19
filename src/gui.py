@@ -345,7 +345,7 @@ class DiaGUI:
 
     def teklif_ac(self):
         from teklif_gui import TeklifPenceresi
-        TeklifPenceresi(self.root)
+        TeklifPenceresi(self.root, musteri_klasoru=self.musteri_klasoru)
 
     def logo_ac(self):
         from entegrasyon_gui import LogoPenceresi

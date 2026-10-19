@@ -376,6 +376,11 @@ def bolumler():
             'Etiket (Ekonomik / Önerilen / Kapsamlı) alternatif tekliflerde kullanılır.',
             '1) Paketler: + Paket Ekle ile arayın, ekleyin. Adet, İnd. %, İnd. Tutar, A/S kolonlarına çift tıklayıp '
             'değiştirin. Sabit kalemler, kampanya, maliyet ve bu teklife özel saat ücreti de burada.',
+            'Kodla hızlı ekleme: "Kod:" kutusuna paket kodunu yazıp/yapıştırıp Enter. Birden çok kodu Excel\'den '
+            'veya bir listeden kopyalayıp "Panodan Yapıştır" (ya da paket listesinde Ctrl+V) ile tek seferde '
+            'ekleyin. Alt alta, virgül/noktalı virgül/boşluk ile ayrılmış kodlar kabul edilir; büyük/küçük harf, '
+            'Türkçe karakter ve - _ . farkı önemsizdir. "KOD 3" veya Excel\'de kodun yanındaki hücre tam sayıysa '
+            'adet olarak alınır. Bulunamayan, pasif ve teklifte zaten olan kodlar listelenir, eklenmez.',
             '2) Keşif & Uyarlama: soruları cevaplayın. Sağdaki hizmet dökümü her kalemin saatini ve "neye göre" '
             'hesaplandığını gösterir. Saat kolonuna çift tıklayıp elle değiştirebilirsiniz (boş = öneri). Müşteri '
             'verisinden doldur: veri temizleme klasöründen cari/stok sayısını ve hata oranını alır. Şehir dışıysa '

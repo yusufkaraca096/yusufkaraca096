@@ -9,7 +9,7 @@ from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 import teklif_cikti  # noqa: E402
-from teklif_hesap import hesapla, ybh_hesapla, kademe_katsayi  # noqa: E402
+from teklif_hesap import hesapla, ybh_hesapla, kademe_katsayi, kod_listesi_coz  # noqa: E402
 from teklif_veri import TeklifVeri, AYAR_VARSAYILAN, varsayilan_klasor, veri_klasoru_degistir  # noqa: E402
 
 
@@ -468,6 +468,29 @@ class KurallarTest(unittest.TestCase):
         v = TeklifVeri(yol)
         self.assertEqual(v.kurallar()['odeme'][0]['indirim'], 7)
         v.db.close()
+
+
+class KodYapistirTest(unittest.TestCase):
+    P = {'DIA-URE-STD': {'aktif': 1}, 'EKO.MOBIL': {'aktif': 1}, 'ŞUBE1': {'aktif': 1}, 'ESKI': {'aktif': 0}}
+
+    def test_alt_alta_ve_ayraclar(self):
+        b, y, p = kod_listesi_coz('DIA-URE-STD\r\neko.mobil; şube1, ESKI\n\nYOKKOD', self.P)
+        self.assertEqual(b, [('DIA-URE-STD', None), ('EKO.MOBIL', None), ('ŞUBE1', None)])
+        self.assertEqual((y, p), (['YOKKOD'], ['ESKI']))
+
+    def test_ayrac_farki_ve_adet(self):
+        b, y, _ = kod_listesi_coz('dia ure std 3\nEKO_MOBIL', self.P)
+        self.assertEqual(b, [('DIA-URE-STD', 3), ('EKO.MOBIL', None)])
+        self.assertEqual(y, [])
+
+    def test_excel_satirlari(self):
+        metin = 'DIA-URE-STD\t2\tÜretim\t15000\nEKO.MOBIL\tMobil\t900\nBaşlık\tAd\n'
+        b, y, _ = kod_listesi_coz(metin, self.P)
+        self.assertEqual(b, [('DIA-URE-STD', 2), ('EKO.MOBIL', None)])
+        self.assertEqual(y, ['Başlık'])
+
+    def test_bos(self):
+        self.assertEqual(kod_listesi_coz('', self.P), ([], [], []))
 
 
 if __name__ == '__main__':

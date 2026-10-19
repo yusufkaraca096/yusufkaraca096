@@ -1350,11 +1350,12 @@ DIA lisans + hizmet teklifi hazırlar; RACA_DIA_Teklif_Motoru.xlsx'in program ha
 
 1. Müşteri: ad, kullanıcı sayıları, yetkili / telefon / e-posta / VKN. Paket tipi eşiğe göre seçilir. Etiket (Ekonomik / Önerilen / Kapsamlı) alternatif tekliflerde kullanılır.
 2. 1) Paketler: + Paket Ekle ile arayın, ekleyin. Adet, İnd. %, İnd. Tutar, A/S kolonlarına çift tıklayıp değiştirin. Sabit kalemler, kampanya, maliyet ve bu teklife özel saat ücreti de burada.
-3. 2) Keşif & Uyarlama: soruları cevaplayın. Sağdaki hizmet dökümü her kalemin saatini ve "neye göre" hesaplandığını gösterir. Saat kolonuna çift tıklayıp elle değiştirebilirsiniz (boş = öneri). Müşteri verisinden doldur: veri temizleme klasöründen cari/stok sayısını ve hata oranını alır. Şehir dışıysa yerinde gün ve kişi sayısını girin.
-4. 3) Ödeme / Taksit: her seçenekte müşterinin ödeyeceği, bankanın keseceği komisyon ve size kalan tutar. PDF kolonuna çift tıklayarak müşteriye hangi seçeneklerin sunulacağını belirleyin.
-5. 4) Bakım Anlaşması: önerilen paket ve hesabın dökümü; teklife eklenecek paketi seçin.
-6. 5) Satış Asistanı & Kontroller: tahmini kazanma ihtimali, öneriler ve kritik hatalar.
-7. Kaydet: numara verilir. Revizyon Kaydet: aynı teklifin -R1, -R2 sürümü (eskisi korunur). PDF / Excel: kritik hata varsa yönetici şifresi (tanımlıysa) veya onay istenir.
+3. Kodla hızlı ekleme: "Kod:" kutusuna paket kodunu yazıp/yapıştırıp Enter. Birden çok kodu Excel'den veya bir listeden kopyalayıp "Panodan Yapıştır" (ya da paket listesinde Ctrl+V) ile tek seferde ekleyin. Alt alta, virgül/noktalı virgül/boşluk ile ayrılmış kodlar kabul edilir; büyük/küçük harf, Türkçe karakter ve - _ . farkı önemsizdir. "KOD 3" veya Excel'de kodun yanındaki hücre tam sayıysa adet olarak alınır. Bulunamayan, pasif ve teklifte zaten olan kodlar listelenir, eklenmez.
+4. 2) Keşif & Uyarlama: soruları cevaplayın. Sağdaki hizmet dökümü her kalemin saatini ve "neye göre" hesaplandığını gösterir. Saat kolonuna çift tıklayıp elle değiştirebilirsiniz (boş = öneri). Müşteri verisinden doldur: veri temizleme klasöründen cari/stok sayısını ve hata oranını alır. Şehir dışıysa yerinde gün ve kişi sayısını girin.
+5. 3) Ödeme / Taksit: her seçenekte müşterinin ödeyeceği, bankanın keseceği komisyon ve size kalan tutar. PDF kolonuna çift tıklayarak müşteriye hangi seçeneklerin sunulacağını belirleyin.
+6. 4) Bakım Anlaşması: önerilen paket ve hesabın dökümü; teklife eklenecek paketi seçin.
+7. 5) Satış Asistanı & Kontroller: tahmini kazanma ihtimali, öneriler ve kritik hatalar.
+8. Kaydet: numara verilir. Revizyon Kaydet: aynı teklifin -R1, -R2 sürümü (eskisi korunur). PDF / Excel: kritik hata varsa yönetici şifresi (tanımlıysa) veya onay istenir.
 
 ### Uyarlama nasıl hesaplanır (hizmet dökümü)
 

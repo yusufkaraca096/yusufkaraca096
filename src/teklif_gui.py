@@ -10,7 +10,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 import teklif_cikti
-from teklif_hesap import hesapla, ybh_hesapla
+from teklif_hesap import hesapla, ybh_hesapla, kod_listesi_coz
 from teklif_veri import TeklifVeri, AYARLAR, varsayilan_klasor, veri_klasoru_degistir
 
 LACIVERT = '#2c3e50'
@@ -190,6 +190,13 @@ class TeklifPenceresi:
         _dugme(btn, '🗑 Seçileni Sil', self.kalem_sil, '#e74c3c').pack(side=tk.LEFT, padx=3)
         _dugme(btn, '▲', lambda: self.kalem_tasi(-1), '#95a5a6').pack(side=tk.LEFT, padx=1)
         _dugme(btn, '▼', lambda: self.kalem_tasi(1), '#95a5a6').pack(side=tk.LEFT, padx=1)
+        tk.Label(btn, text='   Kod:', bg='#f0f0f0').pack(side=tk.LEFT)
+        self.hizli_kod = tk.StringVar()
+        kod_giris = tk.Entry(btn, textvariable=self.hizli_kod, width=26, font=('Arial', 10))
+        kod_giris.pack(side=tk.LEFT, padx=3)
+        kod_giris.bind('<Return>', lambda e: self.kod_ile_ekle())
+        _dugme(btn, 'Ekle', self.kod_ile_ekle, '#27ae60').pack(side=tk.LEFT, padx=1)
+        _dugme(btn, '📋 Panodan Yapıştır', self.panodan_ekle, '#8e44ad').pack(side=tk.LEFT, padx=3)
         tk.Label(btn, text='  ✎ kolonlara çift tıklayıp değiştirin; boş = otomatik', bg='#f0f0f0',
                  fg='#555').pack(side=tk.LEFT)
         self.aciklama_lbl = tk.Label(f, text='', bg='#f0f0f0', fg='#555', font=('Arial', 9), anchor='w',
@@ -210,6 +217,8 @@ class TeklifPenceresi:
         self.tree.tag_configure('toplam', background='#d6eaf8', font=('Arial', 9, 'bold'))
         self.tree.bind('<Double-1>', self.hucre_duzenle)
         self.tree.bind('<Delete>', lambda e: self.kalem_sil())
+        self.tree.bind('<Control-v>', lambda e: self.panodan_ekle())
+        self.tree.bind('<Control-V>', lambda e: self.panodan_ekle())
         self.tree.bind('<<TreeviewSelect>>', self._secim_aciklamasi)
 
         sec = tk.Frame(f, bg='#f0f0f0')
@@ -704,9 +713,58 @@ class TeklifPenceresi:
             return
         PaketSecici(self.pencere, self.paketler, self.ayar, self._paket_eklendi)
 
-    def _paket_eklendi(self, kod):
-        self.kalemler.append({'kod': kod, 'adet': None, 'ind_yuzde': 0, 'ind_tutar': 0, 'saat': None})
-        self.hesapla()
+    def _paket_eklendi(self, kod, adet=None, hesapla=True):
+        self.kalemler.append({'kod': kod, 'adet': adet, 'ind_yuzde': 0, 'ind_tutar': 0, 'saat': None})
+        if hesapla:
+            self.hesapla()
+
+    def kodlari_ekle(self, metin):
+        """Yapistirilan/yazilan kodlari teklife ekler; bulunamayanlari bildirir. Eklenen sayisini dondurur."""
+        if not self.paketler:
+            messagebox.showinfo('Paket yok', 'Önce Veriler > Excel\'den İçe Aktar ile paket listesini yükleyin.',
+                                parent=self.pencere)
+            return 0
+        bulunan, bulunamayan, pasif = kod_listesi_coz(metin, self.paketler)
+        mevcut = {k['kod'] for k in self.kalemler}
+        eklenen, zaten = [], []
+        for kod, adet in bulunan:
+            if kod in mevcut:
+                zaten.append(kod)
+                continue
+            self._paket_eklendi(kod, adet, hesapla=False)
+            mevcut.add(kod)
+            eklenen.append(kod)
+        if eklenen:
+            self.hesapla()
+        mesaj = []
+        if bulunamayan:
+            mesaj.append('Bulunamayan kod(lar):\n  ' + ', '.join(bulunamayan[:30]) +
+                         (' …' if len(bulunamayan) > 30 else ''))
+        if pasif:
+            mesaj.append('Pasif paket(ler), eklenmedi:\n  ' + ', '.join(pasif))
+        if zaten:
+            mesaj.append('Teklifte zaten var, tekrar eklenmedi:\n  ' + ', '.join(zaten))
+        if mesaj:
+            messagebox.showwarning('Kod ekleme', '%d paket eklendi.\n\n' % len(eklenen) + '\n\n'.join(mesaj),
+                                   parent=self.pencere)
+        self.durum_lbl.config(text='Kodla eklendi: %d paket' % len(eklenen))
+        return len(eklenen)
+
+    def kod_ile_ekle(self):
+        metin = self.hizli_kod.get()
+        if metin.strip() and self.kodlari_ekle(metin):
+            self.hizli_kod.set('')
+
+    def panodan_ekle(self):
+        try:
+            metin = self.pencere.clipboard_get()
+        except tk.TclError:
+            metin = ''
+        if not metin.strip():
+            messagebox.showinfo('Pano boş', 'Önce Excel\'den veya başka bir yerden paket kodlarını kopyalayın.',
+                                parent=self.pencere)
+            return
+        self.kodlari_ekle(metin)
 
     def kalem_sil(self):
         sec = [int(i) for i in self.tree.selection() if i != 'toplam']
@@ -1013,6 +1071,9 @@ class PaketSecici:
             self.tree.insert('', 'end', iid=p['kod'], values=(
                 p['kod'], p.get('ad'), p.get('tur'), para(p.get('std_fiyat')), para(p.get('ent_fiyat')),
                 '%g / %g' % (p.get('std_saat') or 0, p.get('ent_saat') or 0)))
+        tam = next((k for k in self.tree.get_children() if aranan and katla(k) == aranan), None)
+        if tam:
+            self.tree.move(tam, '', 0)
         ilk = self.tree.get_children()[:1]
         if ilk:
             self.tree.selection_set(ilk)

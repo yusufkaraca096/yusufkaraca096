@@ -60,6 +60,87 @@ VARSAYILAN_KURALLAR = {
 
 
 # ======================================================================
+# Kopyala-yapistir ile paket kodu girisi
+# ======================================================================
+def _kod_anahtari(s):
+    """Buyuk/kucuk harf, Turkce karakter ve - _ . bosluk farklarini yok sayar."""
+    return re.sub(r'[\s\-_.]+', '', katla(s))
+
+
+def kod_listesi_coz(metin, paketler):
+    """Yapistirilan metindeki paket kodlarini bulur.
+
+    Kabul edilenler: alt alta / virgul / noktali virgul / bosluk ile ayrilmis kodlar,
+    'KOD 3' (kod + adet) ve Excel'den kopyalanan satirlar (sekme ile ayrilmis hucreler;
+    koddan hemen sonraki hucre tam sayiysa adet sayilir).
+    Donus: (bulunan [(kod, adet|None)], bulunamayan [metin], pasif [kod])
+    """
+    harita = {}
+    for kod in paketler:
+        harita.setdefault(katla(kod), kod)
+        harita.setdefault(_kod_anahtari(kod), kod)
+
+    def bul(parca):
+        return harita.get(katla(parca)) or harita.get(_kod_anahtari(parca))
+
+    def adet_mi(parca):
+        p = parca.strip()
+        return p.isdigit() and 0 < int(p) < 100000
+
+    bulunan, bulunamayan, pasif = [], [], []
+
+    def ekle(kod, adet=None):
+        if not paketler[kod].get('aktif', 1):
+            if kod not in pasif:
+                pasif.append(kod)
+            return False
+        bulunan.append((kod, adet))
+        return True
+
+    for satir in str(metin or '').replace('\r', '\n').split('\n'):
+        if not satir.strip():
+            continue
+        if '\t' in satir:
+            hucreler = [h.strip() for h in satir.split('\t')]
+            for i, h in enumerate(hucreler):
+                kod = bul(h) if h else None
+                if kod:
+                    sonraki = hucreler[i + 1] if i + 1 < len(hucreler) else ''
+                    ekle(kod, int(sonraki) if adet_mi(sonraki) else None)
+                    break
+            else:
+                ilk = next((h for h in hucreler if h), '')
+                if ilk:
+                    bulunamayan.append(ilk)
+            continue
+        kod = bul(satir.strip())
+        if kod:
+            ekle(kod)
+            continue
+        son_eklenen = False
+        parcalar = [x for x in re.split(r'[,;\s]+', satir.strip()) if x]
+        i = 0
+        while i < len(parcalar):
+            # bosluklu kodlar icin en uzun eslesme ("DIA URE STD" -> DIA-URE-STD)
+            for j in range(len(parcalar), i, -1):
+                kod = bul(''.join(parcalar[i:j]))
+                if kod:
+                    break
+            if kod:
+                son_eklenen = ekle(kod)
+                i = j
+                continue
+            parca = parcalar[i]
+            if adet_mi(parca) and son_eklenen and bulunan[-1][1] is None:
+                bulunan[-1] = (bulunan[-1][0], int(parca))
+            else:
+                bulunamayan.append(parca)
+                son_eklenen = False
+            i += 1
+    return bulunan, bulunamayan, pasif
+
+
+# ======================================================================
 # Lisans satirlari
 # ======================================================================
 def paket_tipi_bul(masaustu, mobil, ayar, secim='OTOMATIK'):
